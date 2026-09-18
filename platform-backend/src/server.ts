@@ -35,23 +35,41 @@ import { BuildJobRegistry } from './services/builds/build-job-registry.ts';
 import { BuildQueueService } from './services/builds/build-queue-service.ts';
 import { DockerImageService } from './services/docker/docker-image-service.ts';
 import { DockerManagerService } from './services/docker/docker-manager-service.ts';
+import { ExternalDockerDaemon } from './services/docker/external-docker-daemon.ts';
+import type { DockerHostFiles } from './services/docker/interfaces.ts';
 import { resolveDockerEndpoint } from './services/docker/resolve-docker-endpoint.ts';
 import { ImagePresetService } from './services/images/image-preset-service.ts';
 import { bootstrapWslDocker } from './services/wsl/bootstrap-wsl-docker.ts';
+import type { WslDockerDaemon } from './services/wsl/wsl-docker-daemon.ts';
 import { WslDockerHostFiles } from './services/wsl/wsl-docker-host-files.ts';
 
 const endpoint = resolveDockerEndpoint({ dockerHost: config.DOCKER_HOST });
 const wslKeepalive: boolean = config.DOCKER_WSL_KEEPALIVE !== '0';
-const daemon = bootstrapWslDocker(endpoint.baseUrl, wslKeepalive);
+
+// A unix:// endpoint means this process runs next to a daemon somebody else keeps
+// up (a container with the socket mounted): no WSL distro to boot, and no way to
+// touch daemon-host files. A tcp:// endpoint is the WSL deployment.
+let daemon: WslDockerDaemon | ExternalDockerDaemon;
+let hostFiles: DockerHostFiles | undefined;
+if (endpoint.socketPath !== undefined) {
+    daemon = new ExternalDockerDaemon();
+    hostFiles = undefined;
+} else {
+    daemon = bootstrapWslDocker(endpoint.baseUrl, wslKeepalive);
+    hostFiles = new WslDockerHostFiles();
+}
+
 const dockerImages = new DockerImageService({
     daemon: daemon,
+    socketPath: endpoint.socketPath,
     host: endpoint.host,
     port: endpoint.port,
 });
 const docker = new DockerManagerService({
     daemon: daemon,
-    hostFiles: new WslDockerHostFiles(),
+    hostFiles: hostFiles,
     images: dockerImages,
+    socketPath: endpoint.socketPath,
     host: endpoint.host,
     port: endpoint.port,
 });

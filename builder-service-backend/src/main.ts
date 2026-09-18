@@ -21,6 +21,7 @@ await mkdir(config.WORKSPACE_DIR, { recursive: true });
 const platform = new PlatformApiClient(config.PLATFORM_API_URL);
 const git = new GitCloneService();
 const images = new ImageBuilderService({
+    socketPath: config.DOCKER_SOCKET_PATH,
     host: config.DOCKER_HOST_NAME,
     port: config.DOCKER_HOST_PORT,
 });

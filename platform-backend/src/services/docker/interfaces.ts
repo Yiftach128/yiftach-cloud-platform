@@ -221,20 +221,29 @@ export interface ContainerDetails {
 
 /** A fully resolved daemon endpoint (see resolve-docker-endpoint.ts). */
 export interface DockerEndpoint {
+    /**
+     * Unix socket the daemon is reached over (e.g. "/var/run/docker.sock"), or
+     * undefined for a TCP endpoint. When set, host/port/protocol are unused.
+     */
+    socketPath: string | undefined;
     host: string;
     port: number;
     protocol: 'http' | 'https';
-    /** e.g. "http://127.0.0.1:2375" */
+    /** For logging and errors, e.g. "http://127.0.0.1:2375" or "unix:///var/run/docker.sock". */
     baseUrl: string;
 }
 
-/** Options for resolveDockerEndpoint. Explicit host/port win over the dockerHost string. */
+/**
+ * Options for resolveDockerEndpoint. Explicit socketPath/host/port win over the
+ * dockerHost string.
+ */
 export interface ResolveDockerEndpointOptions
-    extends Pick<DockerManagerOptions, 'host' | 'port' | 'protocol' | 'ca' | 'cert' | 'key'> {
+    extends Pick<DockerManagerOptions, 'socketPath' | 'host' | 'port' | 'protocol' | 'ca' | 'cert' | 'key'> {
     /**
-     * Docker CLI style endpoint (e.g. "tcp://127.0.0.1:2375"), consulted when
-     * host/port are not given. Malformed values are ignored rather than thrown,
-     * so a stray value can't break startup.
+     * Docker CLI style endpoint ("tcp://127.0.0.1:2375" or
+     * "unix:///var/run/docker.sock"), consulted when socketPath/host/port are not
+     * given. Malformed values are ignored rather than thrown, so a stray value
+     * can't break startup.
      */
     dockerHost?: string;
 }
@@ -242,7 +251,8 @@ export interface ResolveDockerEndpointOptions
 /**
  * The slice of a daemon lifecycle the manager depends on — kept as an interface so
  * the manager never imports a concrete (platform-specific) implementation. The WSL
- * implementation lives in `src/services/wsl/`.
+ * implementation lives in `src/services/wsl/`; `ExternalDockerDaemon` in this folder
+ * is the do-nothing one for a daemon somebody else keeps running (unix socket).
  */
 export interface DockerDaemonLifecycle {
     /** Resolves once the daemon answers; rejects if it cannot be brought up. */
@@ -271,6 +281,11 @@ export interface DockerImageProvider {
 }
 
 export interface DockerManagerOptions {
+    /**
+     * Unix socket to reach the daemon over (e.g. "/var/run/docker.sock"). When set,
+     * host/port/protocol and the TLS material are unused.
+     */
+    socketPath?: string;
     /** Defaults to 127.0.0.1; the composition root passes the configured endpoint. */
     host?: string;
     /** Defaults to 2375; the composition root passes the configured endpoint. */
@@ -295,7 +310,8 @@ export interface DockerManagerOptions {
     daemon?: DockerDaemonLifecycle;
     /**
      * Daemon-host file access, required only by `clearContainerLogs`. Omitting it
-     * makes that operation fail; everything else works without it.
+     * makes that operation throw `LogsNotClearableError`; everything else works
+     * without it.
      */
     hostFiles?: DockerHostFiles;
     /**
@@ -314,6 +330,8 @@ export interface DockerManagerOptions {
  * transfers are caught by the progress stream's idle watchdog instead).
  */
 export interface DockerImageServiceOptions {
+    /** Unix socket to reach the daemon over (see {@link DockerManagerOptions}). */
+    socketPath?: string;
     /** Defaults to 127.0.0.1; the composition root passes the configured endpoint. */
     host?: string;
     /** Defaults to 2375; the composition root passes the configured endpoint. */

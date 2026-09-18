@@ -23,9 +23,12 @@ export interface IConfig {
     PORT: number;
     /** Address the HTTP server binds. */
     HOST: string;
-    /** Docker daemon endpoint as configured (docker CLI style, e.g. tcp://127.0.0.1:2375). */
+    /**
+     * Docker daemon endpoint as configured, docker CLI style: tcp://127.0.0.1:2375
+     * (the WSL deployment) or unix:///var/run/docker.sock (a mounted socket).
+     */
     DOCKER_HOST: string;
-    /** "0" disables holding the WSL distro open while the server runs. */
+    /** "0" disables holding the WSL distro open while the server runs. Unused with a unix:// endpoint. */
     DOCKER_WSL_KEEPALIVE: string;
     /**
      * How long a running build may go silent before the stale sweep fails it

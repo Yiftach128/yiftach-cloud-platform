@@ -1,7 +1,9 @@
-/** Docker daemon endpoint for the image builder. */
+/** Docker daemon endpoint for the image builder: a unix socket, or else a TCP host and port. */
 export interface ImageBuilderServiceOptions {
-    host: string;
-    port: number;
+    /** Unix socket to reach the daemon over (e.g. "/var/run/docker.sock"). When set, host and port are unused. */
+    socketPath: string | undefined;
+    host: string | undefined;
+    port: number | undefined;
 }
 
 /** One image build from an already-cloned workspace directory. */

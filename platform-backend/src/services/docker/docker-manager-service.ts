@@ -49,7 +49,7 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_LOG_TAIL = 500;
 
 export class DockerManagerService {
-    /** Endpoint this instance talks to, e.g. "http://127.0.0.1:2375". For logging and errors. */
+    /** Endpoint this instance talks to, e.g. "http://127.0.0.1:2375" or "unix:///var/run/docker.sock". For logging and errors. */
     readonly baseUrl: string;
     private readonly docker: Docker;
     private readonly requests: DaemonRequestRunner;
@@ -71,12 +71,20 @@ export class DockerManagerService {
             timeout = options.requestTimeoutMs;
         }
 
-        const dockerOptions: Docker.DockerOptions = {
-            host: endpoint.host,
-            port: endpoint.port,
-            protocol: endpoint.protocol,
-            timeout: timeout,
-        };
+        let dockerOptions: Docker.DockerOptions;
+        if (endpoint.socketPath !== undefined) {
+            dockerOptions = {
+                socketPath: endpoint.socketPath,
+                timeout: timeout,
+            };
+        } else {
+            dockerOptions = {
+                host: endpoint.host,
+                port: endpoint.port,
+                protocol: endpoint.protocol,
+                timeout: timeout,
+            };
+        }
         if (options.apiVersion !== undefined) {
             dockerOptions.version = options.apiVersion;
         }
@@ -344,16 +352,17 @@ export class DockerManagerService {
      * Empties a container's log by truncating the log file on the daemon host —
      * the Engine API has no endpoint for this. Works while the container runs
      * (the json-file driver appends, so writes continue cleanly). Throws
-     * {@link LogsNotClearableError} when the container's log driver keeps no
+     * {@link LogsNotClearableError} when this deployment has no daemon-host file
+     * access (the unix socket deployment) or the container's log driver keeps no
      * truncatable file, and {@link DockerApiError} with status 404 when the
      * container does not exist.
      */
     async clearContainerLogs(id: string): Promise<void> {
-        if (this.hostFiles === undefined) {
-            throw new Error('clearing logs needs daemon-host file access, which this deployment did not configure');
-        }
-
         const details: ContainerDetails = await this.getContainerById(id);
+
+        if (this.hostFiles === undefined) {
+            throw new LogsNotClearableError(details.name, 'this deployment has no access to the daemon host\'s files');
+        }
 
         const driver: string = details.hostConfig.logConfig.type;
         if (driver !== 'json-file') {

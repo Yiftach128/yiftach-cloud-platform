@@ -114,7 +114,7 @@ Both backends have a `.env.example` you can copy to `.env`. Every variable is op
 | Variable | Package | Default | What it does |
 |---|---|---|---|
 | `PORT` | platform-backend | `3000` | API port |
-| `DOCKER_HOST` | both backends | `tcp://127.0.0.1:2375` | Where the Docker daemon lives |
+| `DOCKER_HOST` | both backends | `tcp://127.0.0.1:2375` | Where the Docker daemon lives — `tcp://host:port`, or `unix:///var/run/docker.sock` when running next to the daemon with its socket mounted |
 | `PLATFORM_API_URL` | builder-service-backend | `http://127.0.0.1:3000/api/v1` | Where the agent finds the platform |
 | `AGENT_NAME` | builder-service-backend | machine hostname | The agent's name on the Build Agents page |
 

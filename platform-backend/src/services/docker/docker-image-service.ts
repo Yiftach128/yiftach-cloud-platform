@@ -40,11 +40,18 @@ export class DockerImageService implements DockerImageProvider {
     constructor(options: DockerImageServiceOptions = {}) {
         const endpoint = resolveDockerEndpoint(options);
 
-        const dockerOptions: Docker.DockerOptions = {
-            host: endpoint.host,
-            port: endpoint.port,
-            protocol: endpoint.protocol,
-        };
+        let dockerOptions: Docker.DockerOptions;
+        if (endpoint.socketPath !== undefined) {
+            dockerOptions = {
+                socketPath: endpoint.socketPath,
+            };
+        } else {
+            dockerOptions = {
+                host: endpoint.host,
+                port: endpoint.port,
+                protocol: endpoint.protocol,
+            };
+        }
         if (options.apiVersion !== undefined) {
             dockerOptions.version = options.apiVersion;
         }

@@ -69,7 +69,9 @@ error handler.
 - `src/server.ts` — composition root: imports `src/config/config.ts` (which loads
   `.env` and logs itself — `PORT`, `HOST`, `DOCKER_HOST`, `DOCKER_WSL_KEEPALIVE`,
   `BUILD_STALE_TIMEOUT_MS`), builds the services, mounts `express.json()`, the routes
-  under `/api/v1`, and the error handler last. No logic.
+  under `/api/v1`, and the error handler last. No logic — its one `if/else` picks the
+  deployment adapters from the endpoint kind: a `tcp://` `DOCKER_HOST` gets the WSL
+  adapters, a `unix://` one gets `ExternalDockerDaemon` and no host-file access.
 - `src/middleware/error-handler.ts` — the only place service errors become HTTP:
   `ValidationError` and malformed JSON → 400, `DockerApiError` → its status,
   `ImagePullError`/`BuildJobNotFoundError` → 404, `LogsNotClearableError`/
@@ -94,6 +96,14 @@ error handler.
   dockerode/daemon wire shapes are quarantined in `container-mapper.ts`,
   `image-mapper.ts`, `classify-dockerode-error.ts`, and `drain-progress-stream.ts`.
   Image *builds* do not happen in this process — they belong to the builder service.
+  `resolve-docker-endpoint.ts` accepts both docker CLI endpoint forms:
+  `tcp://host:port` (the WSL deployment) and `unix://<path>` (a mounted socket — the
+  resolved `DockerEndpoint.socketPath` is then set and both services hand dockerode
+  `{ socketPath }` instead of host/port; `baseUrl` stays a display string either way).
+  `ExternalDockerDaemon` is the do-nothing `DockerDaemonLifecycle` for the socket
+  deployment (the daemon is somebody else's to keep up). Without a `DockerHostFiles`
+  — the socket deployment has none — `clearContainerLogs` throws
+  `LogsNotClearableError` (409).
 - `src/services/builds/` — the FIFO build queue the builder service works off:
   `POST /builds` enqueues (202, status `queued`; 429 past 10 waiting jobs) with the
   whole container config riding along (an empty `ports` list means the builder
@@ -126,7 +136,8 @@ error handler.
   the WSL distro on demand and holds it open (operational details under
   Verification); `bootstrapWslDocker` builds it and starts a background warm-up.
   `WslDockerHostFiles` implements `DockerHostFiles`: daemon-host file operations
-  (log clearing) via `wsl.exe -u root`.
+  (log clearing) via `wsl.exe -u root`. Wired only for a `tcp://` endpoint — the
+  WSL ping uses `fetch`, which cannot speak to a unix socket.
 
 ## Builder service architecture (`builder-service-backend/`)
 
@@ -138,8 +149,9 @@ create container → report, then poll again.
 
 - `src/main.ts` — entry point; `src/config/config.ts` — env-driven `config`
   (`IConfig`), loads `.env` and logs itself at import (`PLATFORM_API_URL`,
-  `DOCKER_HOST` — with `DOCKER_HOST_NAME`/`DOCKER_HOST_PORT` parsed fail-fast from
-  it — `POLL_INTERVAL_MS`, `WORKSPACE_DIR`, `GIT_CLONE_TIMEOUT_MS`, `AGENT_NAME` —
+  `DOCKER_HOST` — `tcp://host:port` or `unix://<path>`, with `DOCKER_SOCKET_PATH`
+  or else `DOCKER_HOST_NAME`/`DOCKER_HOST_PORT` parsed fail-fast from it (the side
+  that does not apply is `undefined`) — `POLL_INTERVAL_MS`, `WORKSPACE_DIR`, `GIT_CLONE_TIMEOUT_MS`, `AGENT_NAME` —
   defaults to the machine hostname — and `HEARTBEAT_INTERVAL_MS`; defaults suit
   local dev).
 - `src/services/platform/` — `PlatformApiClient`, the only door to the platform API

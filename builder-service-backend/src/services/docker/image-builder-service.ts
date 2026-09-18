@@ -25,11 +25,17 @@ export class ImageBuilderService {
     private readonly docker: Docker;
 
     constructor(options: ImageBuilderServiceOptions) {
-        this.docker = new Docker({
-            host: options.host,
-            port: options.port,
-            protocol: 'http',
-        });
+        if (options.socketPath !== undefined) {
+            this.docker = new Docker({
+                socketPath: options.socketPath,
+            });
+        } else {
+            this.docker = new Docker({
+                host: options.host,
+                port: options.port,
+                protocol: 'http',
+            });
+        }
     }
 
     public async buildImage(options: BuildImageOptions): Promise<void> {
