@@ -10,13 +10,14 @@ body {
 }
 
 /* Copyable content: form fields, table body values (headers stay chrome),
-   description values, alert text, and log output. */
+   description values, alert text, log output, and chat message text. */
 input,
 textarea,
 .ant-table-tbody .ant-table-cell,
 .ant-descriptions-item-content,
 .ant-alert,
-.app-log-output {
+.app-log-output,
+.app-chat-message {
     user-select: text;
 }
 
@@ -24,6 +25,18 @@ textarea,
    table cells) goes back to non-selectable. */
 .ant-btn {
     user-select: none;
+}
+
+/* The chat launcher is the bare mascot (chat-bubble.tsx) — no box signals a
+   button, so hovering (or keyboard focus) grows it slightly. Here rather than
+   inline because :hover cannot be styled inline. */
+.app-chat-mascot img {
+    transition: transform 0.15s ease-in-out;
+}
+
+.app-chat-mascot:hover img,
+.app-chat-mascot:focus-visible img {
+    transform: scale(1.08);
 }
 
 /* Height comes from app-layout.tsx (headerRowHeight), shared with the content-side

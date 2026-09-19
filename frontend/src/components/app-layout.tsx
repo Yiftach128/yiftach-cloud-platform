@@ -4,8 +4,9 @@ import type { MenuProps } from 'antd';
 import type { ReactElement } from 'react';
 import { Link, Outlet, useLocation } from 'react-router';
 
+import ChatBubble from './chat-bubble.tsx';
 import HeaderBreadcrumb from './header-breadcrumb.tsx';
-import type { NavItem } from './interfaces.ts';
+import type { AppLayoutProps, NavItem } from './interfaces.ts';
 
 /* One step darker than the content background (antd's colorBgLayout, #f5f5f5). */
 const siderBackground: string = '#ececec';
@@ -56,36 +57,40 @@ function deriveSelectedMenuKey(pathname: string, items: NavItem[]): string {
     return pathname;
 }
 
-function AppLayout(): ReactElement {
+function AppLayout(props: AppLayoutProps): ReactElement {
     const location = useLocation();
 
     const selectedMenuKey: string = deriveSelectedMenuKey(location.pathname, navItems);
 
     return (
-        <Layout style={{ minHeight: '100vh' }}>
-            <Layout.Sider theme="light" style={{ background: siderBackground, borderRight: '1px solid #aaa' }}>
-                <div className="app-logo" style={{ height: headerRowHeight }}><CloudOutlined /> YCP</div>
-                <Divider style={{ margin: '0 0 8px 0', borderColor: dividerColor }} />
-                <Menu
-                    className="app-sider-menu"
-                    mode="inline"
-                    selectedKeys={[selectedMenuKey]}
-                    items={menuItems}
-                    style={{ background: 'transparent', borderInlineEnd: 'none' }}
-                />
-            </Layout.Sider>
-            <Layout>
-                {/* Header strip matching the sider logo row; the divider below continues
-                    the sider's divider across the rest of the screen. */}
-                <div style={{ height: headerRowHeight, display: 'flex', alignItems: 'center', padding: '0 24px' }}>
-                    <HeaderBreadcrumb navItems={navItems} />
-                </div>
-                <Divider style={{ margin: 0, borderColor: dividerColor }} />
-                <Layout.Content style={{ padding: 24 }}>
-                    <Outlet />
-                </Layout.Content>
+        <>
+            <Layout style={{ minHeight: '100vh' }}>
+                <Layout.Sider theme="light" style={{ background: siderBackground, borderRight: '1px solid #aaa' }}>
+                    <div className="app-logo" style={{ height: headerRowHeight }}><CloudOutlined /> YCP</div>
+                    <Divider style={{ margin: '0 0 8px 0', borderColor: dividerColor }} />
+                    <Menu
+                        className="app-sider-menu"
+                        mode="inline"
+                        selectedKeys={[selectedMenuKey]}
+                        items={menuItems}
+                        style={{ background: 'transparent', borderInlineEnd: 'none' }}
+                    />
+                </Layout.Sider>
+                <Layout>
+                    {/* Header strip matching the sider logo row; the divider below continues
+                        the sider's divider across the rest of the screen. */}
+                    <div style={{ height: headerRowHeight, display: 'flex', alignItems: 'center', padding: '0 24px' }}>
+                        <HeaderBreadcrumb navItems={navItems} />
+                    </div>
+                    <Divider style={{ margin: 0, borderColor: dividerColor }} />
+                    <Layout.Content style={{ padding: 24 }}>
+                        <Outlet />
+                    </Layout.Content>
+                </Layout>
             </Layout>
-        </Layout>
+            {/* Outside the Outlet, so the conversation survives route changes. */}
+            <ChatBubble fetcher={props.chatFetcher} />
+        </>
     );
 }
 

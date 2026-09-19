@@ -1,10 +1,62 @@
 import type { ReactElement } from 'react';
 
 import type { DockerFetcherService } from '../fetchers/docker-fetcher-service.ts';
-import type { BuildJob, ContainerState, ImagePreset, PresetEnvVar } from '../fetchers/interfaces.ts';
+import type { BuildJob, ChatFetcher, ChatRole, ContainerState, ImagePreset, PresetEnvVar } from '../fetchers/interfaces.ts';
+
+export interface AppLayoutProps {
+    /** Feeds the chat bubble, which lives in the layout so a conversation survives route changes. */
+    chatFetcher: ChatFetcher;
+}
 
 export interface BuildAgentListProps {
     fetcher: DockerFetcherService;
+}
+
+export interface ChatBubbleProps {
+    fetcher: ChatFetcher;
+}
+
+/**
+ * Where one chat message stands. 'streaming' is an assistant reply still
+ * arriving; 'stopped' one the user cut short; 'error' one the fetcher failed.
+ * User messages are always 'done'.
+ */
+export type ChatMessageStatus = 'streaming' | 'done' | 'stopped' | 'error';
+
+/** One rendered chat message. */
+export interface ChatMessage {
+    /** Conversation-local sequence number; the React key. */
+    id: number;
+    role: ChatRole;
+    /** Grows fragment by fragment while status is 'streaming'. */
+    text: string;
+    status: ChatMessageStatus;
+    /** The failure text; present only when status is 'error'. */
+    errorMessage?: string;
+}
+
+export interface ChatPanelProps {
+    fetcher: ChatFetcher;
+    /** Whether the chat card is showing — the composer takes focus when it opens. */
+    open: boolean;
+}
+
+export interface ChatMessageListProps {
+    messages: ChatMessage[];
+}
+
+export interface ChatMessageItemProps {
+    message: ChatMessage;
+}
+
+export interface ChatComposerProps {
+    /** Whether the chat card is showing — the text field takes focus when it opens. */
+    open: boolean;
+    /** True while a reply streams: sending is blocked and the button turns into Stop. */
+    replying: boolean;
+    /** Receives the trimmed, non-empty draft. */
+    onSend: (text: string) => void;
+    onStop: () => void;
 }
 
 export interface ContainerListProps {

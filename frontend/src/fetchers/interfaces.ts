@@ -432,3 +432,29 @@ export interface BuildAgent {
     /** Job the agent is building; present only while status is 'building'. */
     currentJobId?: string;
 }
+
+/** Who wrote one chat turn. */
+export type ChatRole = 'user' | 'assistant';
+
+/** One turn of the conversation, as the chat backend receives it. */
+export interface ChatTurn {
+    role: ChatRole;
+    text: string;
+}
+
+/**
+ * The seam between the chat UI and whatever answers it. Today that is
+ * StubChatFetcher; the real implementation will stream from the platform
+ * backend — never from an LLM provider directly, so the API key stays
+ * server-side.
+ */
+export interface ChatFetcher {
+    /**
+     * Sends the conversation so far and streams the assistant's reply:
+     * `onDelta` receives each text fragment in order, and the promise resolves
+     * once the reply is complete. Aborting `signal` ends the stream early and
+     * the promise still resolves — callers tell the two apart by
+     * `signal.aborted`. Rejects only with ChatFetcherError.
+     */
+    streamReply(turns: ChatTurn[], onDelta: (textDelta: string) => void, signal: AbortSignal): Promise<void>;
+}

@@ -283,6 +283,28 @@ classes; JSX files use `.tsx`).
   the `build-progress-panel.tsx` style), Uptime (`components/agent-format.ts`'s
   `formatUptime` from the agent's reported `startedAt`; "—" when offline), and
   Last seen. No detail page behind the rows, so none of the row-link machinery.
+- The assistant chat is a floating bubble mounted in `app-layout.tsx` *outside* the
+  `<Outlet />`, so a conversation survives route changes. `components/chat-bubble.tsx`
+  is only the shell — an antd `FloatButton` stripped to the bare 72px mascot
+  (`public/chatbot-badge.svg`, an `<img>` like `preset-icon.tsx`; transparent
+  background, no border or shadow, so antd contributes only the fixed positioning,
+  z-index and keyboard focus ring — with no box to signal a button, the hover/focus
+  grow in `index.css`'s `.app-chat-mascot` is the affordance) plus a
+  `position: fixed` antd `Card` (deliberately not `Popover`/`Modal`/`Drawer`: the card must stay open while the page
+  behind it is used, and closes only through its X or the corner button — nothing
+  listens for outside clicks). Closed means hidden, never unmounted: `opacity: 0` +
+  the `inert` attribute, so the history, a reply still streaming and the scroll
+  position survive. Don't switch that to `visibility` — it is inherited, and antd's
+  inputs/buttons transition `all`, so they trail the card by 0.2s (lingering after a
+  close, and the composer's focus-on-open lands on a still-hidden field).
+  `chat-panel.tsx` owns the conversation (messages + composer) and knows nothing
+  about where it is mounted, so moving it to a docked panel means replacing the shell
+  only. It talks to the `ChatFetcher` interface (`fetchers/interfaces.ts`):
+  `streamReply(turns, onDelta, signal)` — streaming-shaped from the start; an abort
+  resolves (Stop is not an error), failures reject with `ChatFetcherError`.
+  `StubChatFetcher` is temporary scaffolding wired in `App.tsx` (canned reply;
+  sending `/fail` shows the error state) until the platform's chat endpoint exists —
+  the browser never calls an LLM provider directly.
 - The dev server proxies `/api` → `http://127.0.0.1:3000` (`vite.config.ts`); the backend
   deliberately has no CORS middleware, so never call the backend origin directly. The
   fetcher's base URL is the relative `/api/v1`, which is also what lets the app image
@@ -292,7 +314,8 @@ classes; JSX files use `.tsx`).
 - UI chrome is never text-selectable. `index.css` sets `user-select: none` on `body`;
   only copyable content opts back in with `user-select: text` — form fields, table
   *body* cells (headers/column names stay chrome), description values, alert text,
-  and `.app-log-output` (the log panes). Buttons re-disable selection so row actions
+  `.app-log-output` (the log panes), and `.app-chat-message` (chat message text).
+  Buttons re-disable selection so row actions
   inside table cells stay chrome. New chrome (buttons, menus, cards, breadcrumbs,
   table headers) needs no work — it inherits none; a new surface that displays
   copyable values must join the opt-in list in `index.css`.

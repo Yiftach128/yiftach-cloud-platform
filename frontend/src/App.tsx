@@ -3,6 +3,8 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 
 import AppLayout from './components/app-layout.tsx';
 import { DockerFetcherService } from './fetchers/docker-fetcher-service.ts';
+import type { ChatFetcher } from './fetchers/interfaces.ts';
+import { StubChatFetcher } from './fetchers/stub-chat-fetcher.ts';
 import BuildAgentsPage from './pages/build-agents-page.tsx';
 import ContainerDetailsPage from './pages/container-details-page.tsx';
 import ImageDetailsPage from './pages/image-details-page.tsx';
@@ -12,12 +14,14 @@ import OverviewPage from './pages/overview-page.tsx';
 import ServicesPage from './pages/services-page.tsx';
 
 const dockerFetcher: DockerFetcherService = new DockerFetcherService('/api/v1');
+/* Placeholder until the platform's chat endpoint exists; the real fetcher swaps in here. */
+const chatFetcher: ChatFetcher = new StubChatFetcher();
 
 function App(): ReactElement {
     return (
         <BrowserRouter>
             <Routes>
-                <Route element={<AppLayout />}>
+                <Route element={<AppLayout chatFetcher={chatFetcher} />}>
                     <Route index element={<Navigate to="/services" replace />} />
                     <Route path="/services" element={<ServicesPage fetcher={dockerFetcher} />} />
                     <Route path="/services/:containerName" element={<ContainerDetailsPage fetcher={dockerFetcher} />} />

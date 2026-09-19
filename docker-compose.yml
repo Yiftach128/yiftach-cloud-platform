@@ -35,11 +35,13 @@ services:
 
     # A build agent in its own container, so cloning an unverified repository never
     # touches the platform's filesystem. No published ports — it only polls the
-    # platform. `docker compose up -d --scale builder=3` runs several; each reports
-    # under its own container hostname.
+    # platform. Two replicas by default, each reporting under its own container
+    # hostname; `--scale builder=N` overrides the count for one `up`.
     builder:
         build: ./builder-service-backend
         restart: unless-stopped
+        deploy:
+            replicas: 2
         environment:
             PLATFORM_API_URL: http://platform:3000/api/v1
         volumes:

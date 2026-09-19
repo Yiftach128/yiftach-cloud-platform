@@ -140,7 +140,7 @@ You don't need to start WSL yourself — the first request that finds the daemon
 
 ### Run with Docker
 
-Instead of the three terminals, the whole app can run as two containers next to the Docker daemon it manages — all it needs is Docker with Compose (no Node.js, no git). Run this in a shell that has `docker` (on the WSL setup above, a WSL shell inside the repo folder):
+Instead of the three terminals, the whole app can run as two Compose services next to the Docker daemon it manages — all it needs is Docker with Compose (no Node.js, no git). Run this in a shell that has `docker` (on the WSL setup above, a WSL shell inside the repo folder):
 
 ```bash
 docker compose up -d --build
@@ -149,12 +149,12 @@ docker compose up -d --build
 Then open **http://localhost:3000**.
 
 - **`platform`** — the API and the built UI on one port (the root `Dockerfile`).
-- **`builder`** — a build agent in its own container, so cloning an unverified repo never touches the platform (`builder-service-backend/Dockerfile`). `docker compose up -d --scale builder=3` runs several.
+- **`builder`** — a build agent in its own container, so cloning an unverified repo never touches the platform (`builder-service-backend/Dockerfile`). Runs as two replicas by default (`deploy.replicas` in `docker-compose.yml`), so two builds can run in parallel; `docker compose up -d --scale builder=N` overrides the count for one `up`.
 
 Both reach the daemon through the mounted `/var/run/docker.sock`. Good to know:
 
 - The UI is published on `127.0.0.1` only, on purpose — the API has no login and controls Docker, so it must not be reachable from the network.
 - Port 3000 taken? Put `YCP_PORT=3080` in a `.env` file next to `docker-compose.yml`.
 - The platform answers only requests addressed to `localhost`, `127.0.0.1`, or `platform` (the builder's name for it) — `ALLOWED_HOSTS` in `docker-compose.yml`. Opening the UI under another hostname means adding it there.
-- The two YCP containers are not platform-managed, so My Services lists them only with "Show all containers on this device" turned on. Stopping `ycp-platform-1` from there stops the UI itself — bring it back with `docker compose up -d`.
+- The YCP containers (`ycp-platform-1`, `ycp-builder-1`, `ycp-builder-2`) are not platform-managed, so My Services lists them only with "Show all containers on this device" turned on. Stopping `ycp-platform-1` from there stops the UI itself — bring it back with `docker compose up -d`.
 - Compose is for *running* the app. For development keep using `npm run dev` — here every code change needs `docker compose up -d --build`.
