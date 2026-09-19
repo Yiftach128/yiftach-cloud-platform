@@ -7,6 +7,7 @@ import express from 'express';
 
 import { config } from './config/config.ts';
 import { errorHandler } from './middleware/error-handler.ts';
+import { staticFrontend } from './middleware/static-frontend.ts';
 import { deleteContainerLogsRoute } from './routes/delete-container-logs.ts';
 import { deleteContainerRoute } from './routes/delete-container.ts';
 import { deleteImageRoute } from './routes/delete-image.ts';
@@ -103,6 +104,7 @@ app.use('/api/v1', postBuildsQueueLogsRoute(imageBuilds));
 app.use('/api/v1', postBuildsQueueResultRoute(imageBuilds));
 app.use('/api/v1', getBuildAgentsRoute(buildAgents));
 app.use('/api/v1', postBuildAgentsHeartbeatRoute(buildAgents));
+app.use(staticFrontend(config.STATIC_DIR)); // the built UI, after the API; serves nothing when STATIC_DIR is empty
 app.use(errorHandler);
 
 const server = app.listen(config.PORT, config.HOST, () => {

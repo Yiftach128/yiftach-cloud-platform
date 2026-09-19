@@ -1,0 +1,9 @@
+# Build context for the root Dockerfile (the app image). node_modules must stay out:
+# the host's are built for the host OS, and the image installs its own.
+**/node_modules
+**/dist
+**/.env
+**/.env.local
+**/*.log
+.git
+public

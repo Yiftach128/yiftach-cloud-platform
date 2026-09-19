@@ -68,8 +68,9 @@ error handler.
 
 - `src/server.ts` — composition root: imports `src/config/config.ts` (which loads
   `.env` and logs itself — `PORT`, `HOST`, `DOCKER_HOST`, `DOCKER_WSL_KEEPALIVE`,
-  `BUILD_STALE_TIMEOUT_MS`), builds the services, mounts `express.json()`, the routes
-  under `/api/v1`, and the error handler last. No logic — its one `if/else` picks the
+  `BUILD_STALE_TIMEOUT_MS`, `STATIC_DIR`), builds the services, mounts `express.json()`,
+  the routes under `/api/v1`, the static frontend after them, and the error handler
+  last. No logic — its one `if/else` picks the
   deployment adapters from the endpoint kind: a `tcp://` `DOCKER_HOST` gets the WSL
   adapters, a `unix://` one gets `ExternalDockerDaemon` and no host-file access.
 - `src/middleware/error-handler.ts` — the only place service errors become HTTP:
@@ -77,6 +78,13 @@ error handler.
   `ImagePullError`/`BuildJobNotFoundError` → 404, `LogsNotClearableError`/
   `ImageNotManagedError` → 409, `BuildQueueFullError` → 429,
   `DockerConnectionError` → 503, anything else → 500.
+- `src/middleware/static-frontend.ts` — serves the built frontend (`STATIC_DIR`,
+  Vite's `dist`) from the API's own origin: real files as-is, any other GET gets
+  `index.html` (the SPA fallback, Express 5 `/{*splat}`). The fallback never answers
+  `/api` or `/health` paths, so an unknown API path stays a 404 instead of becoming
+  HTML with a 200 that an API client would read as success. An empty `STATIC_DIR`
+  (the default — local dev, where Vite owns the UI) returns an empty router, which
+  keeps the on/off decision out of `server.ts`.
 - `src/services/docker/` — the daemon-facing services. `DockerManagerService` is the
   typed facade for container operations (list/inspect/create/start/stop/logs/delete);
   `DockerImageService` owns image acquisition and lifecycle (exists-check, registry
@@ -142,10 +150,11 @@ error handler.
 ## Builder service architecture (`builder-service-backend/`)
 
 A headless polling worker — no HTTP server, so no routes and no error handler; the
-backend code conventions apply. It runs alongside the platform via `npm start` today
-and is designed to run as a container later (its `Dockerfile` exists; a compose file
-is a future phase). One task at a time: claim → clone → build → resolve ports →
-create container → report, then poll again.
+backend code conventions apply. It runs alongside the platform via `npm run dev`, or
+as its own container (its `Dockerfile`; the `builder` service in the root
+`docker-compose.yml`) — a separate container on purpose, so an unverified clone never
+touches the platform's filesystem. One task at a time: claim → clone → build →
+resolve ports → create container → report, then poll again.
 
 - `src/main.ts` — entry point; `src/config/config.ts` — env-driven `config`
   (`IConfig`), loads `.env` and logs itself at import (`PLATFORM_API_URL`,
@@ -268,7 +277,9 @@ classes; JSX files use `.tsx`).
   `formatUptime` from the agent's reported `startedAt`; "—" when offline), and
   Last seen. No detail page behind the rows, so none of the row-link machinery.
 - The dev server proxies `/api` → `http://127.0.0.1:3000` (`vite.config.ts`); the backend
-  deliberately has no CORS middleware, so never call the backend origin directly.
+  deliberately has no CORS middleware, so never call the backend origin directly. The
+  fetcher's base URL is the relative `/api/v1`, which is also what lets the app image
+  serve the built UI and the API from one origin with no frontend changes.
 - App-wide look and feel is set via antd `ConfigProvider` theme tokens in `main.tsx` —
   prefer tokens over CSS overrides of `.ant-*` classes.
 - UI chrome is never text-selectable. `index.css` sets `user-select: none` on `body`;
@@ -286,6 +297,20 @@ classes; JSX files use `.tsx`).
 - Run locally: `npm run dev` in `platform-backend/` (port 3000) and in
   `builder-service-backend/` (no port — it polls the platform), `npm run dev` in
   `frontend/`. Builds need both backend processes up.
+- Run containerized: `docker compose up -d --build` from the repo root, in a shell
+  that has `docker` (here: WSL, or `wsl -d Ubuntu --cd <repo> -- docker compose ...`
+  from Windows). Two services, both with `/var/run/docker.sock` mounted: `platform`
+  (the root `Dockerfile` — a frontend build stage, then the backend plus the built
+  UI; build context is the repo root) and `builder`
+  (`builder-service-backend/Dockerfile`, which finds the platform at
+  `http://platform:3000/api/v1`). Container env defaults (`HOST=0.0.0.0`,
+  `DOCKER_HOST=unix:///var/run/docker.sock`, `STATIC_DIR`) live in the two
+  Dockerfiles; compose carries only the wiring. The UI is published on `127.0.0.1`
+  only, on purpose — the API has no login and controls Docker. `YCP_PORT` (a
+  gitignored `.env` next to the compose file) moves the host port off 3000. Compose
+  is for running the app; development stays on `npm run dev`, since every code
+  change there means an image rebuild. The `.dockerignore` files keep the host's
+  `node_modules` (built for the host OS) out of the images.
 - End-to-end build test repo: `https://github.com/Yiftach128/cloudplatform-build-test`
   (a 2-file nginx repo that exists for exactly this).
 - The Docker daemon runs in WSL2 Ubuntu on `tcp://127.0.0.1:2375` (IPv4 bind is

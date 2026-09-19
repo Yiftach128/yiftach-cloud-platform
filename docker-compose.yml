@@ -1,0 +1,45 @@
+# Runs the whole app next to the Docker daemon it manages:
+#
+#     docker compose up -d --build
+#
+# then open http://localhost:3000. Day-to-day development stays on `npm run dev`
+# (see the README) — a code change here means an image rebuild.
+#
+# This file carries only the wiring (ports, the socket mounts, where the builder
+# finds the platform); each image's own defaults live in its Dockerfile.
+
+name: ycp
+
+services:
+    # The API and the UI on one origin.
+    platform:
+        build: .
+        restart: unless-stopped
+        ports:
+            # Loopback only, on purpose: the API has no login and controls Docker.
+            # YCP_PORT moves the host port when 3000 is taken (a .env next to this
+            # file works: YCP_PORT=3080).
+            - "127.0.0.1:${YCP_PORT:-3000}:3000"
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock
+        healthcheck:
+            test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/health"]
+            interval: 10s
+            timeout: 3s
+            retries: 3
+            start_period: 5s
+
+    # A build agent in its own container, so cloning an unverified repository never
+    # touches the platform's filesystem. No published ports — it only polls the
+    # platform. `docker compose up -d --scale builder=3` runs several; each reports
+    # under its own container hostname.
+    builder:
+        build: ./builder-service-backend
+        restart: unless-stopped
+        environment:
+            PLATFORM_API_URL: http://platform:3000/api/v1
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock
+        depends_on:
+            platform:
+                condition: service_healthy

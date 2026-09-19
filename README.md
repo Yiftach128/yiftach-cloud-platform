@@ -136,3 +136,24 @@ cd frontend && npm run dev
 Then open **http://localhost:5173**.
 
 You don't need to start WSL yourself — the first request that finds the daemon down boots it automatically (a cold start takes around 10 seconds).
+
+### Run with Docker
+
+Instead of the three terminals, the whole app can run as two containers next to the Docker daemon it manages — all it needs is Docker with Compose (no Node.js, no git). Run this in a shell that has `docker` (on the WSL setup above, a WSL shell inside the repo folder):
+
+```bash
+docker compose up -d --build
+```
+
+Then open **http://localhost:3000**.
+
+- **`platform`** — the API and the built UI on one port (the root `Dockerfile`).
+- **`builder`** — a build agent in its own container, so cloning an unverified repo never touches the platform (`builder-service-backend/Dockerfile`). `docker compose up -d --scale builder=3` runs several.
+
+Both reach the daemon through the mounted `/var/run/docker.sock`. Good to know:
+
+- The UI is published on `127.0.0.1` only, on purpose — the API has no login and controls Docker, so it must not be reachable from the network.
+- Port 3000 taken? Put `YCP_PORT=3080` in a `.env` file next to `docker-compose.yml`.
+- In this mode the platform can't reach the daemon host's files, so clearing a container's logs answers 409.
+- The two YCP containers are not platform-managed, so My Services lists them only with "Show all containers on this device" turned on. Stopping `ycp-platform-1` from there stops the UI itself — bring it back with `docker compose up -d`.
+- Compose is for *running* the app. For development keep using `npm run dev` — here every code change needs `docker compose up -d --build`.

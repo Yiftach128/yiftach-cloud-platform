@@ -36,6 +36,12 @@ export interface IConfig {
      * sweep quickly.
      */
     BUILD_STALE_TIMEOUT_MS: number;
+    /**
+     * Folder holding the built frontend (Vite's `dist`), served from the API's own
+     * origin. Empty serves no UI — local dev, where the Vite dev server owns it;
+     * the app image sets it.
+     */
+    STATIC_DIR: string;
 }
 
 export const config: IConfig = {
@@ -44,6 +50,7 @@ export const config: IConfig = {
     DOCKER_HOST: process.env.DOCKER_HOST || 'tcp://127.0.0.1:2375',
     DOCKER_WSL_KEEPALIVE: process.env.DOCKER_WSL_KEEPALIVE || '1',
     BUILD_STALE_TIMEOUT_MS: Number(process.env.BUILD_STALE_TIMEOUT_MS || '600000'),
+    STATIC_DIR: process.env.STATIC_DIR || '',
 };
 
 console.log('config:', config);
