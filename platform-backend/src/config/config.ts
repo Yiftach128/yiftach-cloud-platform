@@ -42,6 +42,13 @@ export interface IConfig {
      * the app image sets it.
      */
     STATIC_DIR: string;
+    /**
+     * Comma-separated hostnames (no ports) a request's Host — and Origin, when a
+     * browser sends one — must name; anything else gets 403. The default covers
+     * local dev and the published compose port; docker-compose.yml adds the
+     * platform's service name, which is how the builder container addresses it.
+     */
+    ALLOWED_HOSTS: string;
 }
 
 export const config: IConfig = {
@@ -51,6 +58,7 @@ export const config: IConfig = {
     DOCKER_WSL_KEEPALIVE: process.env.DOCKER_WSL_KEEPALIVE || '1',
     BUILD_STALE_TIMEOUT_MS: Number(process.env.BUILD_STALE_TIMEOUT_MS || '600000'),
     STATIC_DIR: process.env.STATIC_DIR || '',
+    ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1',
 };
 
 console.log('config:', config);

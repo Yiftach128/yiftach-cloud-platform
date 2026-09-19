@@ -115,6 +115,7 @@ Both backends have a `.env.example` you can copy to `.env`. Every variable is op
 |---|---|---|---|
 | `PORT` | platform-backend | `3000` | API port |
 | `DOCKER_HOST` | both backends | `tcp://127.0.0.1:2375` | Where the Docker daemon lives — `tcp://host:port`, or `unix:///var/run/docker.sock` when running next to the daemon with its socket mounted |
+| `ALLOWED_HOSTS` | platform-backend | `localhost,127.0.0.1` | Hostnames a request's `Host` (and browser `Origin`) header may name — anything else gets 403 |
 | `PLATFORM_API_URL` | builder-service-backend | `http://127.0.0.1:3000/api/v1` | Where the agent finds the platform |
 | `AGENT_NAME` | builder-service-backend | machine hostname | The agent's name on the Build Agents page |
 
@@ -154,6 +155,6 @@ Both reach the daemon through the mounted `/var/run/docker.sock`. Good to know:
 
 - The UI is published on `127.0.0.1` only, on purpose — the API has no login and controls Docker, so it must not be reachable from the network.
 - Port 3000 taken? Put `YCP_PORT=3080` in a `.env` file next to `docker-compose.yml`.
-- In this mode the platform can't reach the daemon host's files, so clearing a container's logs answers 409.
+- The platform answers only requests addressed to `localhost`, `127.0.0.1`, or `platform` (the builder's name for it) — `ALLOWED_HOSTS` in `docker-compose.yml`. Opening the UI under another hostname means adding it there.
 - The two YCP containers are not platform-managed, so My Services lists them only with "Show all containers on this device" turned on. Stopping `ycp-platform-1` from there stops the UI itself — bring it back with `docker compose up -d`.
 - Compose is for *running* the app. For development keep using `npm run dev` — here every code change needs `docker compose up -d --build`.

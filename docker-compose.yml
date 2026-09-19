@@ -20,6 +20,10 @@ services:
             # YCP_PORT moves the host port when 3000 is taken (a .env next to this
             # file works: YCP_PORT=3080).
             - "127.0.0.1:${YCP_PORT:-3000}:3000"
+        environment:
+            # Hosts a request may name (Host/Origin); anything else gets 403. `platform`
+            # is this service's name — the builder below reaches it as platform:3000.
+            ALLOWED_HOSTS: localhost,127.0.0.1,platform
         volumes:
             - /var/run/docker.sock:/var/run/docker.sock
         healthcheck:

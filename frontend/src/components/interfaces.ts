@@ -30,7 +30,7 @@ export interface ContainerDetailsProps {
 }
 
 /** Actions the container toolbar can run; keys the per-button loading state. */
-export type ContainerAction = 'start' | 'stop' | 'restart' | 'clear-logs' | 'delete';
+export type ContainerAction = 'start' | 'stop' | 'restart' | 'delete';
 
 export interface ContainerControlsProps {
     fetcher: DockerFetcherService;

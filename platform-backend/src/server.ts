@@ -7,8 +7,8 @@ import express from 'express';
 
 import { config } from './config/config.ts';
 import { errorHandler } from './middleware/error-handler.ts';
+import { hostCheck } from './middleware/host-check.ts';
 import { staticFrontend } from './middleware/static-frontend.ts';
-import { deleteContainerLogsRoute } from './routes/delete-container-logs.ts';
 import { deleteContainerRoute } from './routes/delete-container.ts';
 import { deleteImageRoute } from './routes/delete-image.ts';
 import { getBuildAgentsRoute } from './routes/get-build-agents.ts';
@@ -37,27 +37,22 @@ import { BuildQueueService } from './services/builds/build-queue-service.ts';
 import { DockerImageService } from './services/docker/docker-image-service.ts';
 import { DockerManagerService } from './services/docker/docker-manager-service.ts';
 import { ExternalDockerDaemon } from './services/docker/external-docker-daemon.ts';
-import type { DockerHostFiles } from './services/docker/interfaces.ts';
 import { resolveDockerEndpoint } from './services/docker/resolve-docker-endpoint.ts';
 import { ImagePresetService } from './services/images/image-preset-service.ts';
 import { bootstrapWslDocker } from './services/wsl/bootstrap-wsl-docker.ts';
 import type { WslDockerDaemon } from './services/wsl/wsl-docker-daemon.ts';
-import { WslDockerHostFiles } from './services/wsl/wsl-docker-host-files.ts';
 
 const endpoint = resolveDockerEndpoint({ dockerHost: config.DOCKER_HOST });
 const wslKeepalive: boolean = config.DOCKER_WSL_KEEPALIVE !== '0';
 
 // A unix:// endpoint means this process runs next to a daemon somebody else keeps
-// up (a container with the socket mounted): no WSL distro to boot, and no way to
-// touch daemon-host files. A tcp:// endpoint is the WSL deployment.
+// up (a container with the socket mounted): no WSL distro to boot. A tcp://
+// endpoint is the WSL deployment.
 let daemon: WslDockerDaemon | ExternalDockerDaemon;
-let hostFiles: DockerHostFiles | undefined;
 if (endpoint.socketPath !== undefined) {
     daemon = new ExternalDockerDaemon();
-    hostFiles = undefined;
 } else {
     daemon = bootstrapWslDocker(endpoint.baseUrl, wslKeepalive);
-    hostFiles = new WslDockerHostFiles();
 }
 
 const dockerImages = new DockerImageService({
@@ -68,7 +63,6 @@ const dockerImages = new DockerImageService({
 });
 const docker = new DockerManagerService({
     daemon: daemon,
-    hostFiles: hostFiles,
     images: dockerImages,
     socketPath: endpoint.socketPath,
     host: endpoint.host,
@@ -80,6 +74,7 @@ const imageBuilds = new BuildQueueService(buildRegistry, daemon, config.BUILD_ST
 const buildAgents = new BuildAgentRegistry();
 
 const app = express();
+app.use(hostCheck(config.ALLOWED_HOSTS)); // first: nothing answers a request from a foreign host or origin
 app.use(express.json());
 app.use(getHealthRoute(docker)); // liveness probe stays unversioned
 app.use('/api/v1', getContainersRoute(docker));
@@ -87,7 +82,6 @@ app.use('/api/v1', getContainersStatsRoute(docker)); // before :id — /containe
 app.use('/api/v1', getContainerRoute(docker));
 app.use('/api/v1', postContainerRoute(docker));
 app.use('/api/v1', deleteContainerRoute(docker));
-app.use('/api/v1', deleteContainerLogsRoute(docker));
 app.use('/api/v1', getContainerLogsRoute(docker));
 app.use('/api/v1', postContainerStartRoute(docker));
 app.use('/api/v1', postContainerStopRoute(docker));

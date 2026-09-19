@@ -68,16 +68,26 @@ error handler.
 
 - `src/server.ts` — composition root: imports `src/config/config.ts` (which loads
   `.env` and logs itself — `PORT`, `HOST`, `DOCKER_HOST`, `DOCKER_WSL_KEEPALIVE`,
-  `BUILD_STALE_TIMEOUT_MS`, `STATIC_DIR`), builds the services, mounts `express.json()`,
-  the routes under `/api/v1`, the static frontend after them, and the error handler
-  last. No logic — its one `if/else` picks the
-  deployment adapters from the endpoint kind: a `tcp://` `DOCKER_HOST` gets the WSL
-  adapters, a `unix://` one gets `ExternalDockerDaemon` and no host-file access.
+  `BUILD_STALE_TIMEOUT_MS`, `STATIC_DIR`, `ALLOWED_HOSTS`), builds the services, mounts
+  the host check first, then `express.json()`, the routes under `/api/v1`, the static
+  frontend after them, and the error handler last. No logic — its one `if/else` picks
+  the daemon lifecycle from the endpoint kind: a `tcp://` `DOCKER_HOST` gets the WSL
+  daemon, a `unix://` one gets `ExternalDockerDaemon`.
 - `src/middleware/error-handler.ts` — the only place service errors become HTTP:
   `ValidationError` and malformed JSON → 400, `DockerApiError` → its status,
-  `ImagePullError`/`BuildJobNotFoundError` → 404, `LogsNotClearableError`/
-  `ImageNotManagedError` → 409, `BuildQueueFullError` → 429,
-  `DockerConnectionError` → 503, anything else → 500.
+  `ImagePullError`/`BuildJobNotFoundError` → 404, `ImageNotManagedError` → 409,
+  `BuildQueueFullError` → 429, `DockerConnectionError` → 503, anything else → 500.
+- `src/middleware/host-check.ts` — answers 403 itself (an HTTP gate, not a service
+  error) unless the request's `Host` header names a host in `ALLOWED_HOSTS`
+  (comma-separated hostnames, ports ignored; default `localhost,127.0.0.1`) and its
+  `Origin` header — when a browser sends one — does too. The API has no login and
+  controls Docker, so a browser on this machine is the way past the loopback bind:
+  `Host` stops DNS rebinding, `Origin` stops a foreign page firing a body-less POST
+  (stop/restart) at localhost, which no CORS preflight guards. Non-browser clients
+  (the builder, the healthcheck) send no `Origin` and pass on `Host` alone. It reads
+  the raw `Host` header, not `req.hostname`, which would follow `X-Forwarded-Host`
+  under `trust proxy`. A client that reaches the platform under a new name needs
+  that name in `ALLOWED_HOSTS` — compose adds `platform` for the builder.
 - `src/middleware/static-frontend.ts` — serves the built frontend (`STATIC_DIR`,
   Vite's `dist`) from the API's own origin: real files as-is, any other GET gets
   `index.html` (the SPA fallback, Express 5 `/{*splat}`). The fallback never answers
@@ -109,9 +119,7 @@ error handler.
   resolved `DockerEndpoint.socketPath` is then set and both services hand dockerode
   `{ socketPath }` instead of host/port; `baseUrl` stays a display string either way).
   `ExternalDockerDaemon` is the do-nothing `DockerDaemonLifecycle` for the socket
-  deployment (the daemon is somebody else's to keep up). Without a `DockerHostFiles`
-  — the socket deployment has none — `clearContainerLogs` throws
-  `LogsNotClearableError` (409).
+  deployment (the daemon is somebody else's to keep up).
 - `src/services/builds/` — the FIFO build queue the builder service works off:
   `POST /builds` enqueues (202, status `queued`; 429 past 10 waiting jobs) with the
   whole container config riding along (an empty `ports` list means the builder
@@ -139,13 +147,12 @@ error handler.
   library), one function per endpoint body, throwing `ValidationError` (→ 400).
   The container name/ports/env field rules live once in `parse-container-fields.ts`,
   shared by the create-container and start-build parsers.
-- `src/services/wsl/` — the WSL deployment adapters for the docker service's
-  host-side contracts. `WslDockerDaemon` implements `DockerDaemonLifecycle`: boots
-  the WSL distro on demand and holds it open (operational details under
+- `src/services/wsl/` — the WSL deployment adapter for the docker service's
+  daemon-lifecycle contract. `WslDockerDaemon` implements `DockerDaemonLifecycle`:
+  boots the WSL distro on demand and holds it open (operational details under
   Verification); `bootstrapWslDocker` builds it and starts a background warm-up.
-  `WslDockerHostFiles` implements `DockerHostFiles`: daemon-host file operations
-  (log clearing) via `wsl.exe -u root`. Wired only for a `tcp://` endpoint — the
-  WSL ping uses `fetch`, which cannot speak to a unix socket.
+  Wired only for a `tcp://` endpoint — the WSL ping uses `fetch`, which cannot speak
+  to a unix socket.
 
 ## Builder service architecture (`builder-service-backend/`)
 
@@ -305,7 +312,9 @@ classes; JSX files use `.tsx`).
   (`builder-service-backend/Dockerfile`, which finds the platform at
   `http://platform:3000/api/v1`). Container env defaults (`HOST=0.0.0.0`,
   `DOCKER_HOST=unix:///var/run/docker.sock`, `STATIC_DIR`) live in the two
-  Dockerfiles; compose carries only the wiring. The UI is published on `127.0.0.1`
+  Dockerfiles; compose carries only the wiring — which includes the platform's
+  `ALLOWED_HOSTS` (`localhost,127.0.0.1,platform`), because `platform` is a compose
+  service name. The UI is published on `127.0.0.1`
   only, on purpose — the API has no login and controls Docker. `YCP_PORT` (a
   gitignored `.env` next to the compose file) moves the host port off 3000. Compose
   is for running the app; development stays on `npm run dev`, since every code

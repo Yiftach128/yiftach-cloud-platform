@@ -25,7 +25,6 @@ import type {
     ContainerStatsMap,
     CreateContainerOptions,
     DeleteContainerOptions,
-    DockerHostFiles,
     DockerImageProvider,
     DockerManagerOptions,
     GetContainerLogsOptions,
@@ -33,7 +32,6 @@ import type {
     RestartContainerOptions,
     StopContainerOptions,
 } from './interfaces.ts';
-import { LogsNotClearableError } from './logs-not-clearable-error.ts';
 import { parseContainerLogs } from './parse-container-logs.ts';
 import { resolveDockerEndpoint } from './resolve-docker-endpoint.ts';
 import { toContainerStats } from './stats-mapper.ts';
@@ -43,7 +41,6 @@ import { toDaemonTimestamp } from './to-daemon-timestamp.ts';
 export * from './docker-api-error.ts';
 export * from './docker-connection-error.ts';
 export * from './interfaces.ts';
-export * from './logs-not-clearable-error.ts';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_LOG_TAIL = 500;
@@ -53,7 +50,6 @@ export class DockerManagerService {
     readonly baseUrl: string;
     private readonly docker: Docker;
     private readonly requests: DaemonRequestRunner;
-    private readonly hostFiles: DockerHostFiles | undefined;
     private readonly images: DockerImageProvider | undefined;
 
     constructor(options: DockerManagerOptions = {}) {
@@ -61,7 +57,6 @@ export class DockerManagerService {
 
         this.baseUrl = endpoint.baseUrl;
         this.requests = new DaemonRequestRunner(options.daemon, endpoint.baseUrl);
-        this.hostFiles = options.hostFiles;
         this.images = options.images;
 
         let timeout: number;
@@ -346,33 +341,6 @@ export class DockerManagerService {
             this.docker.getContainer(id).logs(logsOptions),
         );
         return { tty: tty, lines: parseContainerLogs(payload, tty) };
-    }
-
-    /**
-     * Empties a container's log by truncating the log file on the daemon host —
-     * the Engine API has no endpoint for this. Works while the container runs
-     * (the json-file driver appends, so writes continue cleanly). Throws
-     * {@link LogsNotClearableError} when this deployment has no daemon-host file
-     * access (the unix socket deployment) or the container's log driver keeps no
-     * truncatable file, and {@link DockerApiError} with status 404 when the
-     * container does not exist.
-     */
-    async clearContainerLogs(id: string): Promise<void> {
-        const details: ContainerDetails = await this.getContainerById(id);
-
-        if (this.hostFiles === undefined) {
-            throw new LogsNotClearableError(details.name, 'this deployment has no access to the daemon host\'s files');
-        }
-
-        const driver: string = details.hostConfig.logConfig.type;
-        if (driver !== 'json-file') {
-            throw new LogsNotClearableError(details.name, `log driver "${driver}" does not keep logs in a truncatable file`);
-        }
-        if (details.logPath === '') {
-            throw new LogsNotClearableError(details.name, 'the daemon reports no log file for it');
-        }
-
-        await this.hostFiles.truncateFile(details.logPath);
     }
 
     /**

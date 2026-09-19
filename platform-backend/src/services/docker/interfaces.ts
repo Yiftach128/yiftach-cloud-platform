@@ -260,17 +260,6 @@ export interface DockerDaemonLifecycle {
 }
 
 /**
- * Host-level file access on the machine where dockerd runs. The Engine API has no
- * endpoint for touching daemon-side files — clearing a container's log means
- * truncating the log driver's file on the daemon host — so each deployment
- * supplies this capability (here: running commands inside the WSL distro).
- */
-export interface DockerHostFiles {
-    /** Truncates a file on the daemon host to zero bytes. Rejects if the file cannot be touched. */
-    truncateFile(absolutePath: string): Promise<void>;
-}
-
-/**
  * The slice of image acquisition the manager depends on — kept as an interface
  * (like {@link DockerDaemonLifecycle}) so the manager never imports the concrete
  * image service. Implemented by `DockerImageService` in this folder.
@@ -308,12 +297,6 @@ export interface DockerManagerOptions {
      * `ensureRunning()` and retries the request once.
      */
     daemon?: DockerDaemonLifecycle;
-    /**
-     * Daemon-host file access, required only by `clearContainerLogs`. Omitting it
-     * makes that operation throw `LogsNotClearableError`; everything else works
-     * without it.
-     */
-    hostFiles?: DockerHostFiles;
     /**
      * Image acquisition, used by `createContainer` to pull a missing image before
      * creating. Omitting it makes creating from a not-yet-pulled image surface the
