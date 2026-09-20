@@ -6,9 +6,11 @@
 import express from 'express';
 
 import { config } from './config/config.ts';
+import { McpHttpEndpoint } from './mcp/mcp-http-endpoint.ts';
 import { errorHandler } from './middleware/error-handler.ts';
 import { hostCheck } from './middleware/host-check.ts';
 import { staticFrontend } from './middleware/static-frontend.ts';
+import { allMcpRoute } from './routes/all-mcp.ts';
 import { deleteContainerRoute } from './routes/delete-container.ts';
 import { deleteImageRoute } from './routes/delete-image.ts';
 import { getBuildAgentsRoute } from './routes/get-build-agents.ts';
@@ -72,11 +74,13 @@ const imagePresets = new ImagePresetService();
 const buildRegistry = new BuildJobRegistry();
 const imageBuilds = new BuildQueueService(buildRegistry, daemon, config.BUILD_STALE_TIMEOUT_MS);
 const buildAgents = new BuildAgentRegistry();
+const mcp = new McpHttpEndpoint({ docker: docker, images: dockerImages, buildAgents: buildAgents });
 
 const app = express();
 app.use(hostCheck(config.ALLOWED_HOSTS)); // first: nothing answers a request from a foreign host or origin
 app.use(express.json());
 app.use(getHealthRoute(docker)); // liveness probe stays unversioned
+app.use(allMcpRoute(mcp)); // unversioned too: MCP negotiates its own protocol revision
 app.use('/api/v1', getContainersRoute(docker));
 app.use('/api/v1', getContainersStatsRoute(docker)); // before :id — /containers/stats must not match :id
 app.use('/api/v1', getContainerRoute(docker));
@@ -115,6 +119,7 @@ for (const signal of shutdownSignals) {
     process.on(signal, () => {
         console.log(`${signal} received, shutting down...`);
         imageBuilds.stop();
+        void mcp.close(); // ends open MCP streams, which would otherwise hold server.close() up
         daemon.stop();
         server.close(() => process.exit(0));
         // Fallback if connections linger past close.

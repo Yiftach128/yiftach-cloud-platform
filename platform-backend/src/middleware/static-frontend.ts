@@ -7,7 +7,7 @@ import express, { Router } from 'express';
  * unknown API path stays a 404 instead of becoming index.html with a 200 — API
  * clients (the builder's axios) would read that HTML as success.
  */
-const BACKEND_PATH_PREFIXES: string[] = ['/api', '/health'];
+const BACKEND_PATH_PREFIXES: string[] = ['/api', '/health', '/mcp'];
 
 /**
  * Serves the built frontend (Vite's `dist` folder) from the API's own origin, so one

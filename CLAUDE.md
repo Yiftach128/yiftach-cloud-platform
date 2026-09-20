@@ -18,13 +18,24 @@ that performs image builds; no HTTP server). The frontend lives in `frontend/`
 - **One class per file.** Every class gets its own file, named after the class in
   kebab-case (`DockerApiError` → `docker-api-error.ts`). Classes never live in
   `interfaces.ts` — it holds only types.
+- **Names say what the thing does, even when that makes them long.** A file or
+  function name must tell a reader its job on its own:
+  `run-tool-with-error-mapping.ts`, `tool-result-value-formatters.ts`,
+  `toJsonToolResult` — not `run-tool.ts`, `tool-format.ts`, `toToolResult`. A generic
+  verb or noun carrying the whole name (`run`, `format`, `handle`, `helpers`) is the
+  sign it is too short. Files are still named after their export in kebab-case, and
+  a new folder is welcome when it groups a real kind of thing (e.g.
+  `src/mcp/tool-results-utils/`).
 - **Always indent with 4 spaces (not 2).** Applies to all hand-written source and
   config files. Exception: `package.json` stays as npm writes it (2 spaces), since
   npm reformats it on every install.
 - **Never put a service file directly in `src/`.** Every service lives in a domain
   folder under `src/services/` (e.g. `src/services/docker/docker-manager-service.ts`).
   Only entry points (like `server.ts`, `main.ts`) belong at the `src/` root; startup
-  wiring lives in `src/config/config.ts`.
+  wiring lives in `src/config/config.ts`. The folders beside `services/` are the
+  ways *into* the services, not services themselves: `routes/` + `middleware/` (REST)
+  and, in the platform backend, `mcp/` (MCP). Dependencies point one way — nothing
+  under `services/` imports from `routes/`, `middleware/` or `mcp/`.
 - **Each backend keeps its startup configuration in `src/config/config.ts`.** The
   module loads `.env` itself at the top of the file (ESM import hoisting evaluates it
   before any entry-point statement runs, so env must be loaded here, not in the entry
@@ -44,8 +55,10 @@ that performs image builds; no HTTP server). The frontend lives in `frontend/`
 - **API routes are versioned.** Every API endpoint is served under `/api/v1/...`
   (e.g. `/api/v1/containers`). Route files declare only the resource path
   (`/containers`); the version prefix is applied once in `server.ts` when mounting,
-  so a version bump touches one line. Exception: `/health` stays unversioned — it is
-  an infrastructure liveness probe, not part of the API surface.
+  so a version bump touches one line. Two exceptions stay unversioned: `/health` — an
+  infrastructure liveness probe, not part of the API surface — and `/mcp`, because
+  MCP negotiates its own protocol revision and a REST version bump must not break
+  the URL MCP clients were configured with.
 - **Prefer plain, Java-like code over TypeScript shorthand.** Runtime code should read
   the way it would in Java: explicit type annotations (`Promise<void>`,
   `readonly url: string`), classic control flow (`if {} else {}` with braces), and
@@ -64,13 +77,15 @@ that performs image builds; no HTTP server). The frontend lives in `frontend/`
 ## Platform backend architecture (`platform-backend/`)
 
 Express 5. A request flows route → service → dockerode; errors flow back through the
-error handler.
+error handler. MCP is the second way in: tool → service → dockerode, with errors
+flowing back through `mcp/tool-results-utils/run-tool-with-error-mapping.ts`.
 
 - `src/server.ts` — composition root: imports `src/config/config.ts` (which loads
   `.env` and logs itself — `PORT`, `HOST`, `DOCKER_HOST`, `DOCKER_WSL_KEEPALIVE`,
   `BUILD_STALE_TIMEOUT_MS`, `STATIC_DIR`, `ALLOWED_HOSTS`), builds the services, mounts
-  the host check first, then `express.json()`, the routes under `/api/v1`, the static
-  frontend after them, and the error handler last. No logic — its one `if/else` picks
+  the host check first, then `express.json()`, the unversioned `/health` and `/mcp`,
+  the routes under `/api/v1`, the static frontend after them, and the error handler
+  last. No logic — its one `if/else` picks
   the daemon lifecycle from the endpoint kind: a `tcp://` `DOCKER_HOST` gets the WSL
   daemon, a `unix://` one gets `ExternalDockerDaemon`.
 - `src/middleware/error-handler.ts` — the only place service errors become HTTP:
@@ -91,10 +106,46 @@ error handler.
 - `src/middleware/static-frontend.ts` — serves the built frontend (`STATIC_DIR`,
   Vite's `dist`) from the API's own origin: real files as-is, any other GET gets
   `index.html` (the SPA fallback, Express 5 `/{*splat}`). The fallback never answers
-  `/api` or `/health` paths, so an unknown API path stays a 404 instead of becoming
+  `/api`, `/health` or `/mcp` paths, so an unknown API path stays a 404 instead of becoming
   HTML with a 200 that an API client would read as success. An empty `STATIC_DIR`
   (the default — local dev, where Vite owns the UI) returns an empty router, which
   keeps the on/off decision out of `server.ts`.
+- `src/mcp/` — the platform's own operations as an MCP server (official
+  TypeScript SDK **v2**: `@modelcontextprotocol/server` + `/node`; the v1
+  `@modelcontextprotocol/sdk` monolith is not used), served at `ALL /mcp`
+  (`routes/all-mcp.ts` — `all` because the protocol owns every method on its
+  endpoint: the SDK answers older clients' GET/DELETE with 405 itself). It sits
+  beside `routes/`, not under `services/`, because it is the same kind of thing: a
+  second thin front door onto the services, holding no business logic of its own.
+  One file per tool in
+  `tools/` (`tools/<name>-tool.ts`, exporting `register<Name>Tool(server, service)`
+  — the folder is the tool catalog the way `routes/` is the endpoint catalog, and
+  holds nothing but tools; the `-tool` suffix stays because `get-container.ts`
+  and friends already exist in `routes/`), each only translating an MCP call ↔ a
+  service call. What the tool files share for producing their results sits in
+  `tool-results-utils/`: `run-tool-with-error-mapping.ts` is the only place
+  service errors become tool errors (in band, `isError: true` with a message a
+  model can act on) — the counterpart of `error-handler.ts`;
+  `tool-result-builders.ts` wraps a success (`toJsonToolResult`,
+  `toTextToolResult`); `tool-result-value-formatters.ts` shapes raw values for a
+  model (short ids, MiB, rounding). The server plumbing (`createPlatformMcpServer`,
+  `McpHttpEndpoint`) stays in the folder root. The v1 tool set is
+  read-only (`list_containers`, `get_container`, `get_container_logs`,
+  `get_container_stats`, `list_images`, `get_image`, `list_build_agents`), every
+  tool annotated `readOnlyHint`. Results are shaped for a language model's context
+  window, not mirrored from REST: short ids, MiB instead of bytes, stats joined to
+  container names, logs as plain text capped at 200 lines, and `get_container`
+  redacts env *values* (a tool result may land in a hosted model's context).
+  `createPlatformMcpServer` is a factory, not a shared instance, because an MCP
+  server binds to one transport; `McpHttpEndpoint` wraps the SDK's
+  `createMcpHandler` (per-request, stateless; serves the 2026-07-28 protocol
+  revision and falls back to stateless 2025-era serving) and is closed on shutdown.
+  The SDK handler is validation-free by design — `host-check.ts`, mounted app-wide,
+  is its Host/Origin guard. **The MCP SDK and zod are quarantined in this folder**
+  (the dockerode rule): zod input schemas are the one sanctioned exception to the
+  no-schema-library rule of `services/validation/`, `interfaces.ts` stays free of
+  both, and the route sees only `McpHttpEndpoint`. The SDK is newer than most
+  documentation — read the installed `.d.mts` types before using an API.
 - `src/services/docker/` — the daemon-facing services. `DockerManagerService` is the
   typed facade for container operations (list/inspect/create/start/stop/logs/delete);
   `DockerImageService` owns image acquisition and lifecycle (exists-check, registry
