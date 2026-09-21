@@ -6,10 +6,10 @@
  * depends on either.
  */
 
-import type { BuildAgentRegistry } from '../services/build-agents/build-agent-registry.ts';
-import type { DockerImageService } from '../services/docker/docker-image-service.ts';
-import type { DockerManagerService } from '../services/docker/docker-manager-service.ts';
-import type { ContainerState, PortBinding } from '../services/docker/interfaces.ts';
+import type { BuildAgentRegistry } from '../../services/build-agents/build-agent-registry.ts';
+import type { DockerImageService } from '../../services/docker/docker-image-service.ts';
+import type { DockerManagerService } from '../../services/docker/docker-manager-service.ts';
+import type { ContainerState, PortBinding } from '../../services/docker/interfaces.ts';
 
 /** The platform services the MCP tools translate onto. */
 export interface PlatformMcpServices {

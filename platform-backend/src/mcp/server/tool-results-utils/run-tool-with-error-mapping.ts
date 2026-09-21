@@ -1,8 +1,8 @@
 import type { CallToolResult } from '@modelcontextprotocol/server';
 
-import { DockerApiError } from '../../services/docker/docker-api-error.ts';
-import { DockerConnectionError } from '../../services/docker/docker-connection-error.ts';
-import { ImageNotManagedError } from '../../services/docker/image-not-managed-error.ts';
+import { DockerApiError } from '../../../services/docker/docker-api-error.ts';
+import { DockerConnectionError } from '../../../services/docker/docker-connection-error.ts';
+import { ImageNotManagedError } from '../../../services/docker/image-not-managed-error.ts';
 
 /**
  * Runs one tool call and maps service-layer failures onto MCP tool errors, so

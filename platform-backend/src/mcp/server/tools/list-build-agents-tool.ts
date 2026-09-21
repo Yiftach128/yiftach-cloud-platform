@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 
-import type { BuildAgentRegistry } from '../../services/build-agents/build-agent-registry.ts';
+import type { BuildAgentRegistry } from '../../../services/build-agents/build-agent-registry.ts';
 import { runToolWithErrorMapping } from '../tool-results-utils/run-tool-with-error-mapping.ts';
 import { toJsonToolResult } from '../tool-results-utils/tool-result-builders.ts';
 

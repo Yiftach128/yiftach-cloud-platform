@@ -1,8 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
-import type { DockerManagerService } from '../../services/docker/docker-manager-service.ts';
-import type { ContainerLogLine, ContainerLogs } from '../../services/docker/interfaces.ts';
+import type { DockerManagerService } from '../../../services/docker/docker-manager-service.ts';
+import type { ContainerLogLine, ContainerLogs } from '../../../services/docker/interfaces.ts';
 import { runToolWithErrorMapping } from '../tool-results-utils/run-tool-with-error-mapping.ts';
 import { toTextToolResult } from '../tool-results-utils/tool-result-builders.ts';
 

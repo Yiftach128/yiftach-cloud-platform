@@ -1,6 +1,6 @@
 import { Router } from 'express';
 
-import type { McpHttpEndpoint } from '../mcp/mcp-http-endpoint.ts';
+import type { McpHttpEndpoint } from '../mcp/server/mcp-http-endpoint.ts';
 
 /**
  * ALL /mcp — the platform's MCP server (Streamable HTTP). `all` rather than

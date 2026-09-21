@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 
-import type { DockerManagerService } from '../../services/docker/docker-manager-service.ts';
-import type { Container, ContainerStats, ContainerStatsMap } from '../../services/docker/interfaces.ts';
+import type { DockerManagerService } from '../../../services/docker/docker-manager-service.ts';
+import type { Container, ContainerStats, ContainerStatsMap } from '../../../services/docker/interfaces.ts';
 import type { ContainerStatsToolRow } from '../interfaces.ts';
 import { runToolWithErrorMapping } from '../tool-results-utils/run-tool-with-error-mapping.ts';
 import { toJsonToolResult } from '../tool-results-utils/tool-result-builders.ts';

@@ -6,7 +6,7 @@
 import express from 'express';
 
 import { config } from './config/config.ts';
-import { McpHttpEndpoint } from './mcp/mcp-http-endpoint.ts';
+import { McpHttpEndpoint } from './mcp/server/mcp-http-endpoint.ts';
 import { errorHandler } from './middleware/error-handler.ts';
 import { hostCheck } from './middleware/host-check.ts';
 import { staticFrontend } from './middleware/static-frontend.ts';

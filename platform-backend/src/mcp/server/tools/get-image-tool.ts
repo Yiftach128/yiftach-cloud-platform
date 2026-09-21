@@ -1,8 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
-import type { DockerImageService } from '../../services/docker/docker-image-service.ts';
-import type { ImageDetails } from '../../services/docker/interfaces.ts';
+import type { DockerImageService } from '../../../services/docker/docker-image-service.ts';
+import type { ImageDetails } from '../../../services/docker/interfaces.ts';
 import { runToolWithErrorMapping } from '../tool-results-utils/run-tool-with-error-mapping.ts';
 import { toJsonToolResult } from '../tool-results-utils/tool-result-builders.ts';
 
