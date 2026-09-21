@@ -95,6 +95,7 @@ So a GitHub build flows like this: the wizard posts one request with the repo UR
   (it must bind IPv4 explicitly — WSL's localhost relay does not forward IPv6 listeners, so `tcp://0.0.0.0:2375` won't be reachable from Windows)
 - **Node.js 24** or newer
 - **git** on your PATH (the build agent uses it for cloning)
+- Optional — only the AI assistant chat needs it: **[Ollama](https://ollama.com)** on `127.0.0.1:11434` (installed inside the WSL distro works — the localhost relay reaches it like the Docker daemon) with the model pulled: `ollama pull qwen3:4b-instruct-2507-q4_K_M`. Without it everything else runs, and the chat says the model server is unavailable.
 
 ### Install
 
@@ -116,6 +117,8 @@ Both backends have a `.env.example` you can copy to `.env`. Every variable is op
 | `PORT` | platform-backend | `3000` | API port |
 | `DOCKER_HOST` | both backends | `tcp://127.0.0.1:2375` | Where the Docker daemon lives — `tcp://host:port`, or `unix:///var/run/docker.sock` when running next to the daemon with its socket mounted |
 | `ALLOWED_HOSTS` | platform-backend | `localhost,127.0.0.1` | Hostnames a request's `Host` (and browser `Origin`) header may name — anything else gets 403 |
+| `OLLAMA_URL` | platform-backend | `http://127.0.0.1:11434` | Where the AI assistant's model server (Ollama) listens |
+| `OLLAMA_MODEL` | platform-backend | `qwen3:4b-instruct-2507-q4_K_M` | The model the assistant runs on — pulled in Ollama, with tool-calling support |
 | `PLATFORM_API_URL` | builder-service-backend | `http://127.0.0.1:3000/api/v1` | Where the agent finds the platform |
 | `AGENT_NAME` | builder-service-backend | machine hostname | The agent's name on the Build Agents page |
 
@@ -140,21 +143,32 @@ You don't need to start WSL yourself — the first request that finds the daemon
 
 ### Run with Docker
 
-Instead of the three terminals, the whole app can run as two Compose services next to the Docker daemon it manages — all it needs is Docker with Compose (no Node.js, no git). Run this in a shell that has `docker` (on the WSL setup above, a WSL shell inside the repo folder):
+Instead of the three terminals, the whole app — the AI assistant's model server included — can run as Compose services next to the Docker daemon it manages. All it needs is Docker with Compose (no Node.js, no git, no Ollama). Run this in a shell that has `docker` (on the WSL setup above, a WSL shell inside the repo folder):
 
 ```bash
 docker compose up -d --build
 ```
 
-Then open **http://localhost:3000**.
+Then open **http://localhost:3000**. The first `up` downloads about 6 GB — the Ollama image and the assistant's model. Everything except the chat works right away; the chat answers "model not found" until the download is done (`docker compose logs -f ollama-model-pull` shows the progress). Every later `up` takes seconds.
 
 - **`platform`** — the API and the built UI on one port (the root `Dockerfile`).
 - **`builder`** — a build agent in its own container, so cloning an unverified repo never touches the platform (`builder-service-backend/Dockerfile`). Runs as two replicas by default (`deploy.replicas` in `docker-compose.yml`), so two builds can run in parallel; `docker compose up -d --scale builder=N` overrides the count for one `up`.
+- **`ollama`** — the assistant's model server (the stock `ollama/ollama` image). No published port: only the platform talks to it, so it never collides with an Ollama installed on the host. Models are kept in a named volume and survive `docker compose down`.
+- **`ollama-model-pull`** — a one-shot helper that downloads the model into that volume and exits. Seeing it as `Exited (0)` is the normal state.
 
-Both reach the daemon through the mounted `/var/run/docker.sock`. Good to know:
+**With an NVIDIA GPU** — as written, the model runs on the CPU, so that `up` works on any machine; that mode is only a fallback — expect minutes per answer on a desktop CPU. To give Ollama the GPU, install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) next to Docker (in WSL: inside the distro — the Windows NVIDIA driver already covers the driver side) and add the override file:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+```
+
+To keep typing plain `docker compose ...`, put `COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml` in a `.env` file next to the compose files. The model takes about 4 GB of GPU memory; `docker exec ycp-ollama-1 ollama ps` shows whether it landed on the GPU (`100% GPU`). The first chat after a start waits about a minute while the model loads.
+
+The platform and the builders reach the daemon through the mounted `/var/run/docker.sock`. Good to know:
 
 - The UI is published on `127.0.0.1` only, on purpose — the API has no login and controls Docker, so it must not be reachable from the network.
 - Port 3000 taken? Put `YCP_PORT=3080` in a `.env` file next to `docker-compose.yml`.
 - The platform answers only requests addressed to `localhost`, `127.0.0.1`, or `platform` (the builder's name for it) — `ALLOWED_HOSTS` in `docker-compose.yml`. Opening the UI under another hostname means adding it there.
-- The YCP containers (`ycp-platform-1`, `ycp-builder-1`, `ycp-builder-2`) are not platform-managed, so My Services lists them only with "Show all containers on this device" turned on. Stopping `ycp-platform-1` from there stops the UI itself — bring it back with `docker compose up -d`.
+- The assistant runs on `qwen3:4b-instruct-2507-q4_K_M`. `OLLAMA_MODEL=<tag>` in that same `.env` file swaps it — for the platform and the download together; the model must support tool calling.
+- The YCP containers (`ycp-platform-1`, `ycp-builder-1`, `ycp-builder-2`, `ycp-ollama-1`) are not platform-managed, so My Services lists them only with "Show all containers on this device" turned on. Stopping `ycp-platform-1` from there stops the UI itself — bring it back with `docker compose up -d`.
 - Compose is for *running* the app. For development keep using `npm run dev` — here every code change needs `docker compose up -d --build`.

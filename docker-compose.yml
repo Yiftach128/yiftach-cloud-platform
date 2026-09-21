@@ -5,10 +5,20 @@
 # then open http://localhost:3000. Day-to-day development stays on `npm run dev`
 # (see the README) — a code change here means an image rebuild.
 #
-# This file carries only the wiring (ports, the socket mounts, where the builder
-# finds the platform); each image's own defaults live in its Dockerfile.
+# This file carries only the wiring (ports, the socket mounts, where the services
+# find each other); each image's own defaults live in its Dockerfile.
+#
+# As written here the assistant's model runs on the CPU, so `up` works on any
+# machine. With an NVIDIA GPU, add docker-compose.gpu.yml (see that file).
 
 name: ycp
+
+# What more than one service below has to agree on, written once: the Ollama image
+# (pinned — the platform's Ollama client was verified against this version's wire
+# format) and the model the assistant runs on. OLLAMA_MODEL in a .env next to this
+# file swaps the model for the platform and the pull together.
+x-ollama-image: &ollama-image ollama/ollama:0.34.2
+x-ollama-model: &ollama-model ${OLLAMA_MODEL:-qwen3:4b-instruct-2507-q4_K_M}
 
 services:
     # The API and the UI on one origin.
@@ -24,6 +34,11 @@ services:
             # Hosts a request may name (Host/Origin); anything else gets 403. `platform`
             # is this service's name — the builder below reaches it as platform:3000.
             ALLOWED_HOSTS: localhost,127.0.0.1,platform
+            # The model server below, by its service name. Deliberately no depends_on:
+            # the platform starts and serves everything else with Ollama down, and a
+            # chat then ends with an error event that says so.
+            OLLAMA_URL: http://ollama:11434
+            OLLAMA_MODEL: *ollama-model
         volumes:
             - /var/run/docker.sock:/var/run/docker.sock
         healthcheck:
@@ -49,3 +64,38 @@ services:
         depends_on:
             platform:
                 condition: service_healthy
+
+    # The assistant's model server. No published ports — only the platform talks to
+    # it, as ollama:11434 — so it never collides with an Ollama installed on the
+    # host. The image ships without models; they live in a named volume, which
+    # survives `down` and image updates.
+    ollama:
+        image: *ollama-image
+        restart: unless-stopped
+        volumes:
+            - ollama-models:/root/.ollama
+        healthcheck:
+            # The image has no wget or curl; the CLI asking its own server is the probe.
+            test: ["CMD", "ollama", "list"]
+            interval: 10s
+            timeout: 5s
+            retries: 3
+            start_period: 5s
+
+    # Downloads the assistant's model into the volume, then exits — the image's
+    # entrypoint is the `ollama` CLI, pointed at the server above instead of starting
+    # its own. A few GB on the first `up` (`docker compose logs -f ollama-model-pull`
+    # shows the progress; until it is done a chat answers "model not found"); on
+    # every later `up` the model is already there and this finishes in a moment.
+    ollama-model-pull:
+        image: *ollama-image
+        restart: "no"
+        environment:
+            OLLAMA_HOST: http://ollama:11434
+        command: ["pull", *ollama-model]
+        depends_on:
+            ollama:
+                condition: service_healthy
+
+volumes:
+    ollama-models:

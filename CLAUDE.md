@@ -535,7 +535,8 @@ classes; JSX files use `.tsx`).
   the `OLLAMA_MODEL` pulled — no Docker; about 80s on a 4B model) after any change to
   the agent loop, the system prompt, a tool's name/description/schema, or the model;
   `npm run ask:ai-agent -- "<question>"` for a live run against the real daemon.
-  Ollama runs natively in the WSL distro (systemd service, `127.0.0.1:11434`), so it
+  For `npm run dev` and the evals, Ollama runs natively in the WSL distro (systemd
+  service, `127.0.0.1:11434` — compose brings its own, see Run containerized), so it
   is up only while the distro is — and nothing boots the distro for a chat (only a
   failed Docker request does): the chat is deliberately not coupled to WSL, a down
   model server is an `llm_unavailable` error event.
@@ -549,7 +550,7 @@ classes; JSX files use `.tsx`).
   `frontend/`. Builds need both backend processes up.
 - Run containerized: `docker compose up -d --build` from the repo root, in a shell
   that has `docker` (here: WSL, or `wsl -d Ubuntu --cd <repo> -- docker compose ...`
-  from Windows). Two services, both with `/var/run/docker.sock` mounted: `platform`
+  from Windows). Two services with `/var/run/docker.sock` mounted: `platform`
   (the root `Dockerfile` — a frontend build stage, then the backend plus the built
   UI; build context is the repo root) and `builder`
   (`builder-service-backend/Dockerfile`, which finds the platform at
@@ -557,12 +558,41 @@ classes; JSX files use `.tsx`).
   `DOCKER_HOST=unix:///var/run/docker.sock`, `STATIC_DIR`) live in the two
   Dockerfiles; compose carries only the wiring — which includes the platform's
   `ALLOWED_HOSTS` (`localhost,127.0.0.1,platform`), because `platform` is a compose
-  service name. The UI is published on `127.0.0.1`
+  service name, and `OLLAMA_URL` (`http://ollama:11434`) for the same reason. The
+  UI is published on `127.0.0.1`
   only, on purpose — the API has no login and controls Docker. `YCP_PORT` (a
   gitignored `.env` next to the compose file) moves the host port off 3000. Compose
   is for running the app; development stays on `npm run dev`, since every code
   change there means an image rebuild. The `.dockerignore` files keep the host's
   `node_modules` (built for the host OS) out of the images.
+- The assistant under compose: two more services, no application code. `ollama` is
+  the stock `ollama/ollama` image, pinned to the version `OllamaLlmClient`'s wire
+  format was verified against, with **no published port** — only the platform talks
+  to it, by service name, which is also why it coexists with the native Ollama that
+  `npm run dev` and the evals use (they share the one GPU: Ollama unloads an idle
+  model after 5 minutes). Models live in the named volume `ycp_ollama-models`.
+  `ollama-model-pull` is the same image run once as the CLI (`ollama pull` with
+  `OLLAMA_HOST` pointing at the server), then `Exited (0)` — the normal state; about
+  2 s when the model is already there. The platform deliberately has **no
+  `depends_on`** on either (the not-coupled rule above): until the first pull ends,
+  a chat is a 200 stream ending in `llm_request_failed` with Ollama's
+  `model '…' not found`. What two services must agree on — the image tag and the
+  model — is written once, as `x-` anchors at the top of the file; `OLLAMA_MODEL` in
+  the `.env` swaps the model for the platform and the pull together. **The main file
+  is CPU-only on purpose**: a GPU reservation makes `up` fail outright on a Docker
+  without the NVIDIA runtime, so it lives in `docker-compose.gpu.yml`, an override
+  merged by service name (`-f docker-compose.yml -f docker-compose.gpu.yml`, or
+  `COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml` in the `.env`). No code
+  path knows the difference — Ollama picks the device (`docker exec ycp-ollama-1
+  ollama ps` says which: `100% GPU`, 3.9 GB of VRAM with the 8192 context). The
+  host side is the NVIDIA Container Toolkit inside the WSL distro (it registers an
+  `nvidia` runtime in `/etc/docker/daemon.json`; the Windows driver covers the
+  rest). Measured on the GTX 1660 Ti: the first chat after a start waits about a
+  minute for the model to load, after that a tool call comes back in 4 s and an
+  answer takes about 20 s — the native Ollama's range. CPU mode is a fallback that
+  is not tuned: measured here at about 2 tokens/s, 5 minutes for a containers
+  answer (first token after 48 s, inside the client's 120 s idle watchdog — a
+  slower CPU or a longer prompt can outlast it, which is accepted).
 - End-to-end build test repo: `https://github.com/Yiftach128/cloudplatform-build-test`
   (a 2-file nginx repo that exists for exactly this).
 - The Docker daemon runs in WSL2 Ubuntu on `tcp://127.0.0.1:2375` (IPv4 bind is
