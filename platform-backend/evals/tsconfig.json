@@ -1,0 +1,11 @@
+{
+    // Typechecks the eval scripts (and whatever they import from ../src) with the
+    // backend's compiler options. A separate project on purpose: the main
+    // tsconfig.json builds `src/` alone, so dist/ keeps its layout and nothing in
+    // this folder is ever emitted or shipped.
+    "extends": "../tsconfig.json",
+    "compilerOptions": {
+        "noEmit": true
+    },
+    "include": ["./**/*.ts"]
+}

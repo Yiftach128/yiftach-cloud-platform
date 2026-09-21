@@ -11,7 +11,9 @@
     "dev": "nodemon",
     "build": "tsc",
     "serve": "node dist/server.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p evals",
+    "check:tool-choice": "node evals/run-tool-choice-check.ts",
+    "ask:ai-agent": "node evals/ask-ai-agent.ts"
   },
   "devDependencies": {
     "@types/dockerode": "^4.0.1",
@@ -21,6 +23,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@modelcontextprotocol/client": "^2.0.0",
     "@modelcontextprotocol/node": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",
     "dockerode": "^5.0.1",

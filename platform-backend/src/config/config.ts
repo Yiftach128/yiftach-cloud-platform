@@ -49,6 +49,21 @@ export interface IConfig {
      * platform's service name, which is how the builder container addresses it.
      */
     ALLOWED_HOSTS: string;
+    /**
+     * Where Ollama, the model server of the AI assistant, listens. The default
+     * is the native WSL install, reached from Windows through the same
+     * localhost relay as the Docker daemon.
+     */
+    OLLAMA_URL: string;
+    /** Model tag the assistant runs on, exactly as `ollama pull` took it. It must carry Ollama's `tools` capability. */
+    OLLAMA_MODEL: string;
+    /**
+     * Context window the model is loaded with, in tokens (Ollama's `num_ctx`).
+     * Set explicitly because Ollama's own default is small and an over-long
+     * prompt is truncated silently; 8192 is what a 4B model leaves room for on
+     * a 6 GB GPU.
+     */
+    OLLAMA_NUM_CTX: number;
 }
 
 export const config: IConfig = {
@@ -59,6 +74,9 @@ export const config: IConfig = {
     BUILD_STALE_TIMEOUT_MS: Number(process.env.BUILD_STALE_TIMEOUT_MS || '600000'),
     STATIC_DIR: process.env.STATIC_DIR || '',
     ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1',
+    OLLAMA_URL: process.env.OLLAMA_URL || 'http://127.0.0.1:11434',
+    OLLAMA_MODEL: process.env.OLLAMA_MODEL || 'qwen3:4b-instruct-2507-q4_K_M',
+    OLLAMA_NUM_CTX: Number(process.env.OLLAMA_NUM_CTX || '8192'),
 };
 
 console.log('config:', config);

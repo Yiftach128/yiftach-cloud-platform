@@ -25,7 +25,7 @@ that performs image builds; no HTTP server). The frontend lives in `frontend/`
   verb or noun carrying the whole name (`run`, `format`, `handle`, `helpers`) is the
   sign it is too short. Files are still named after their export in kebab-case, and
   a new folder is welcome when it groups a real kind of thing (e.g.
-  `src/mcp/tool-results-utils/`).
+  `src/mcp/server/tool-results-utils/`).
 - **Always indent with 4 spaces (not 2).** Applies to all hand-written source and
   config files. Exception: `package.json` stays as npm writes it (2 spaces), since
   npm reformats it on every install.
@@ -34,8 +34,23 @@ that performs image builds; no HTTP server). The frontend lives in `frontend/`
   Only entry points (like `server.ts`, `main.ts`) belong at the `src/` root; startup
   wiring lives in `src/config/config.ts`. The folders beside `services/` are the
   ways *into* the services, not services themselves: `routes/` + `middleware/` (REST)
-  and, in the platform backend, `mcp/` (MCP). Dependencies point one way — nothing
-  under `services/` imports from `routes/`, `middleware/` or `mcp/`.
+  and, in the platform backend, `mcp/` (MCP).
+- **Folders depend downward only — no import cycles.** Each package has one import
+  direction; a folder never imports from one above it (skipping a level downward is
+  fine). Platform backend: `routes/`, `middleware/`, `mcp/` → `services/`, and nothing
+  under `services/` imports from those three; `evals/`, which sits *beside* `src/`,
+  imports from `src/` and nothing in `src/` imports from it (the `test/`-folder
+  relationship); inside `mcp/`, `client/` → `server/`; inside `services/`: `validation/` → `builds/`, `build-agents/` →
+  `docker/` ← `wsl/`, and `ai-agent/` → `llm/` (`docker/`, `build-agents/`, `images/`
+  and `llm/` import no other service folder, `ai-agent/` imports only `llm/`, and
+  only the front doors import `validation/`); inside `llm/`, a provider subfolder
+  (`ollama/`) imports the folder root, never the reverse. Builder: `worker/` → `platform/`, `git/`, `docker/`, which import
+  neither each other nor `worker/`. Frontend: `pages/` → `components/` → `hooks/` →
+  `fetchers/`. When a lower folder needs something from a higher one, it declares an
+  interface the higher one implements (`docker/`'s `DockerDaemonLifecycle`,
+  implemented by `wsl/`; `ai-agent/`'s `ToolProvider`, implemented by `mcp/client/`)
+  instead of importing upward. A new folder states its place
+  in the chain here when it is added.
 - **Each backend keeps its startup configuration in `src/config/config.ts`.** The
   module loads `.env` itself at the top of the file (ESM import hoisting evaluates it
   before any entry-point statement runs, so env must be loaded here, not in the entry
@@ -78,11 +93,14 @@ that performs image builds; no HTTP server). The frontend lives in `frontend/`
 
 Express 5. A request flows route → service → dockerode; errors flow back through the
 error handler. MCP is the second way in: tool → service → dockerode, with errors
-flowing back through `mcp/tool-results-utils/run-tool-with-error-mapping.ts`.
+flowing back through `mcp/server/tool-results-utils/run-tool-with-error-mapping.ts`.
+The AI agent is a consumer of that second door, not a third one: agent loop → MCP
+client → the same MCP tools.
 
 - `src/server.ts` — composition root: imports `src/config/config.ts` (which loads
   `.env` and logs itself — `PORT`, `HOST`, `DOCKER_HOST`, `DOCKER_WSL_KEEPALIVE`,
-  `BUILD_STALE_TIMEOUT_MS`, `STATIC_DIR`, `ALLOWED_HOSTS`), builds the services, mounts
+  `BUILD_STALE_TIMEOUT_MS`, `STATIC_DIR`, `ALLOWED_HOSTS`, and the assistant's
+  `OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_NUM_CTX`), builds the services, mounts
   the host check first, then `express.json()`, the unversioned `/health` and `/mcp`,
   the routes under `/api/v1`, the static frontend after them, and the error handler
   last. No logic — its one `if/else` picks
@@ -110,7 +128,9 @@ flowing back through `mcp/tool-results-utils/run-tool-with-error-mapping.ts`.
   HTML with a 200 that an API client would read as success. An empty `STATIC_DIR`
   (the default — local dev, where Vite owns the UI) returns an empty router, which
   keeps the on/off decision out of `server.ts`.
-- `src/mcp/` — the platform's own operations as an MCP server (official
+- `src/mcp/` — everything that speaks MCP, split by protocol role: `server/` exposes
+  the platform's operations as tools, `client/` consumes them for the AI agent.
+- `src/mcp/server/` — the platform's own operations as an MCP server (official
   TypeScript SDK **v2**: `@modelcontextprotocol/server` + `/node`; the v1
   `@modelcontextprotocol/sdk` monolith is not used), served at `ALL /mcp`
   (`routes/all-mcp.ts` — `all` because the protocol owns every method on its
@@ -129,7 +149,7 @@ flowing back through `mcp/tool-results-utils/run-tool-with-error-mapping.ts`.
   `tool-result-builders.ts` wraps a success (`toJsonToolResult`,
   `toTextToolResult`); `tool-result-value-formatters.ts` shapes raw values for a
   model (short ids, MiB, rounding). The server plumbing (`createPlatformMcpServer`,
-  `McpHttpEndpoint`) stays in the folder root. The v1 tool set is
+  `McpHttpEndpoint`) stays in the `server/` root. The v1 tool set is
   read-only (`list_containers`, `get_container`, `get_container_logs`,
   `get_container_stats`, `list_images`, `get_image`, `list_build_agents`), every
   tool annotated `readOnlyHint`. Results are shaped for a language model's context
@@ -141,11 +161,81 @@ flowing back through `mcp/tool-results-utils/run-tool-with-error-mapping.ts`.
   `createMcpHandler` (per-request, stateless; serves the 2026-07-28 protocol
   revision and falls back to stateless 2025-era serving) and is closed on shutdown.
   The SDK handler is validation-free by design — `host-check.ts`, mounted app-wide,
-  is its Host/Origin guard. **The MCP SDK and zod are quarantined in this folder**
+  is its Host/Origin guard. **The MCP SDK and zod are quarantined in `src/mcp/`**
   (the dockerode rule): zod input schemas are the one sanctioned exception to the
   no-schema-library rule of `services/validation/`, `interfaces.ts` stays free of
   both, and the route sees only `McpHttpEndpoint`. The SDK is newer than most
   documentation — read the installed `.d.mts` types before using an API.
+- `src/mcp/client/` — the MCP *client* side (`@modelcontextprotocol/client`), which
+  exists so the AI agent gets its tools through MCP without ever seeing the SDK.
+  `McpToolProvider` adapts a connected SDK `Client` to the agent's `ToolProvider`
+  contract: tools with `readOnly` read from the `readOnlyHint` annotation (absent →
+  not read-only, the cautious reading), the server's `instructions` as usage
+  guidance, and both MCP failure surfaces — `isError` results and thrown protocol
+  errors such as schema-rejected arguments — returned in band, so the model can
+  correct itself. `connect-in-process-mcp-tool-provider.ts` links it to a fresh
+  `createPlatformMcpServer` over the SDK's `InMemoryTransport` pair, so the built-in
+  agent uses exactly the catalog external clients get at `/mcp`, minus the HTTP hop.
+  (The SDK labels that transport "testing and development" and suggests a loopback
+  `StreamableHTTPClientTransport` for production in-process use — to be weighed when
+  the chat endpoint wires the agent into `server.ts`.)
+- `src/services/llm/` — the provider-agnostic seam to a language model: `LlmClient`
+  (`streamChat(request, onDelta, signal)`), the message and tool-call types, and the
+  two failures — `LlmUnavailableError` (unreachable, or silent past the idle
+  watchdog) and `LlmRequestError` (the server answered with a refusal). Two outputs
+  on purpose: `onDelta` streams text fragments for whoever shows progress, while the
+  resolved `LlmReply` (full text + tool calls + token counts) is what the loop
+  decides on. An abort *resolves* with the partial reply (Stop is not an error — the
+  frontend `ChatFetcher` rule). Each provider is a subfolder that keeps its wire
+  format to itself: `llm/ollama/` holds `OllamaLlmClient` (plain `fetch` to
+  `/api/chat`, no client library; `stream: true`; `num_ctx` always sent, since
+  Ollama truncates an over-long prompt silently; temperature 0 so tool choice is
+  reproducible; failures arrive as a non-2xx status *or* an `{"error"}` line inside
+  a 200 stream, like Docker's progress streams), `ollama-chat-mapper.ts` (the wire
+  shapes and the mapping — Ollama delivers tool calls whole, never as partial JSON,
+  and wants `tool_name` on result messages) and `read-ndjson-stream.ts` (line
+  buffering across network chunks, with streamed UTF-8 decoding so a multi-byte
+  character split between chunks survives).
+- `src/services/ai-agent/` — `ToolCallingChatOrchestrator`, the hand-written agent
+  loop (deliberately no agent framework or AI SDK): conversation + tool schemas →
+  model; tool calls are executed and appended as results; repeat until the model
+  answers in plain text. Stateless — a run takes the whole conversation
+  (`ChatTurn[]`, the frontend's shape) and keeps nothing. It owns the `ToolProvider`
+  interface and imports only `llm/`. The defensive policy lives here: a model-call
+  cap (6) whose last call offers no tools, forcing an answer
+  (`stopReason: 'model_call_limit'`); unknown tools, exact repeats of an executed
+  call, and thrown tool errors are fed back in band, never thrown; one model turn
+  may carry several calls — an all-read-only batch runs with `Promise.all`, a batch
+  containing any other tool runs serially in the order asked, calls past the
+  per-turn cap (5) are refused in band, and results always go back in call order,
+  one message per call; tool results share a character budget (12000 per run, at
+  most half of it per turn, split across the turn's calls —
+  `trim-tool-result-to-budget.ts` keeps head + tail). Progress is reported as
+  `AgentEvent`s (`delta` / `tool_call` / `tool_result` — the future SSE events); the
+  resolved `AgentRunResult` carries the executed calls and the peak prompt size,
+  which is how context pressure is watched. `build-agent-system-prompt.ts` takes
+  `now` as a parameter, fixed per run, so every model call of a run shares one
+  prefix (prompt-cache reuse).
+- `evals/` (beside `src/`, not under it) — terminal entry points that drive the agent
+  without HTTP. They stand to `src/` as a `test/` folder would: they import from
+  `../src/` and exercise it, nothing in `src/` knows they exist, and they are not
+  part of the app — the image copies `src/` only, so the scripts, the canned data
+  and the test-double provider never ship. `evals/tsconfig.json` extends the main
+  one with `noEmit` (`npm run typecheck` runs both projects); the main
+  `tsconfig.json` deliberately keeps building `src/` alone, so `dist/` keeps its
+  layout. The scripts build their own services with the do-nothing
+  `ExternalDockerDaemon`, so a script never boots or holds the WSL distro.
+  `npm run check:tool-choice`
+  (`run-tool-choice-check.ts`) runs the cases in `tool-choice-cases.ts` (prompt →
+  expected calls with subset-matched arguments, plus allowed extras; includes
+  no-tool and multi-tool cases) through the real loop, the configured model and the
+  *real* MCP tool catalog, with one substitution — `CannedResultsToolProvider`
+  answers every call from `canned-platform-tool-results.ts` — so it needs no Docker
+  and scores comparably across runs and models
+  (`OLLAMA_MODEL=… npm run check:tool-choice`); exit 1 on a failed case.
+  `npm run ask:ai-agent -- "<question>"` asks one question with the tools executed
+  for real (Ctrl+C aborts the run). The case list is plain data on purpose: the
+  later eval harness loads it rather than replacing it.
 - `src/services/docker/` — the daemon-facing services. `DockerManagerService` is the
   typed facade for container operations (list/inspect/create/start/stop/logs/delete);
   `DockerImageService` owns image acquisition and lifecycle (exists-check, registry
@@ -374,7 +464,14 @@ classes; JSX files use `.tsx`).
 ## Verification
 
 - Typecheck: `npm run typecheck` (from `platform-backend/`, `builder-service-backend/`,
-  or `frontend/`); `npm run build` from `frontend/` also verifies the bundle.
+  or `frontend/`); `npm run build` from `frontend/` also verifies the bundle. In
+  `platform-backend/` it covers two projects: `src/` and `evals/`.
+- AI agent: `npm run check:tool-choice` from `platform-backend/` (needs Ollama up and
+  the `OLLAMA_MODEL` pulled — no Docker; about 80s on a 4B model) after any change to
+  the agent loop, the system prompt, a tool's name/description/schema, or the model;
+  `npm run ask:ai-agent -- "<question>"` for a live run against the real daemon.
+  Ollama runs natively in the WSL distro (systemd service, `127.0.0.1:11434`), so it
+  is up only while the distro is.
 - Run locally: `npm run dev` in `platform-backend/` (port 3000) and in
   `builder-service-backend/` (no port — it polls the platform), `npm run dev` in
   `frontend/`. Builds need both backend processes up.

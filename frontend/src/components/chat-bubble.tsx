@@ -148,7 +148,7 @@ function ChatBubble(props: ChatBubbleProps): ReactElement {
                 role="dialog"
                 aria-label="Assistant chat"
                 inert={!isOpen}
-                title="Assistant"
+                title="YCP assistant"
                 extra={headerButtons}
                 style={cardStyle}
                 styles={{ body: cardBodyStyle }}
