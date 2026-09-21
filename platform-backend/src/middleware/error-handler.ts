@@ -1,5 +1,6 @@
 import type { ErrorRequestHandler } from 'express';
 
+import { AiAgentBusyError } from '../services/ai-agent/ai-agent-busy-error.ts';
 import { BuildJobNotFoundError } from '../services/builds/build-job-not-found-error.ts';
 import { BuildQueueFullError } from '../services/builds/build-queue-full-error.ts';
 import { DockerApiError } from '../services/docker/docker-api-error.ts';
@@ -27,6 +28,10 @@ export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
         return;
     }
     if (error instanceof BuildQueueFullError) {
+        res.status(429).json({ message: error.message });
+        return;
+    }
+    if (error instanceof AiAgentBusyError) {
         res.status(429).json({ message: error.message });
         return;
     }

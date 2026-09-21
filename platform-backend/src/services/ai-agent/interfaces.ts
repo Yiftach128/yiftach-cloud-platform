@@ -105,4 +105,6 @@ export interface ToolCallingChatOrchestratorOptions {
     maxToolCallsPerTurn?: number;
     /** Characters of tool results one run may put into the context window, shared by all its calls. Defaults to 12000. */
     toolResultBudgetChars?: number;
+    /** Characters of conversation the model reads: the newest turns that fit, the newest always. Defaults to 8000. */
+    historyBudgetChars?: number;
 }

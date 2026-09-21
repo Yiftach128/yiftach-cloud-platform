@@ -16,7 +16,9 @@
  *   cap are refused in band — every call gets a result message either way;
  * - tool results share a character budget, so they cannot push the conversation
  *   out of the model's context window (which the model server would truncate
- *   silently).
+ *   silently);
+ * - the conversation itself has a character budget too: of a long one, the
+ *   model reads only the newest turns that fit.
  *
  * Stateless: a run takes the whole conversation and keeps nothing afterwards.
  */
@@ -40,11 +42,18 @@ import type {
     ToolCallOutcome,
     ToolProvider,
 } from './interfaces.ts';
+import { selectRecentTurnsWithinBudget } from './select-recent-turns-within-budget.ts';
 import { trimToolResultToBudget } from './trim-tool-result-to-budget.ts';
 
 const DEFAULT_MAX_MODEL_CALLS = 6;
 const DEFAULT_MAX_TOOL_CALLS_PER_TURN = 5;
 const DEFAULT_TOOL_RESULT_BUDGET_CHARS = 12_000;
+/**
+ * What an 8192-token window leaves for the conversation once the system prompt
+ * with the tool schemas (about 1500 tokens), a spent tool-result budget (about
+ * 3500) and the answer being written (about 800) are set aside.
+ */
+const DEFAULT_HISTORY_BUDGET_CHARS = 8_000;
 /** The most one model turn may spend of the run's budget, so a greedy first turn cannot starve the later ones. */
 const TURN_BUDGET_SHARE = 0.5;
 /** Floor per result: enough for an error message or a short answer even when the budget is spent. */
@@ -56,6 +65,7 @@ export class ToolCallingChatOrchestrator {
     private readonly maxModelCalls: number;
     private readonly maxToolCallsPerTurn: number;
     private readonly toolResultBudgetChars: number;
+    private readonly historyBudgetChars: number;
 
     constructor(options: ToolCallingChatOrchestratorOptions) {
         this.llm = options.llm;
@@ -74,6 +84,11 @@ export class ToolCallingChatOrchestrator {
             this.toolResultBudgetChars = DEFAULT_TOOL_RESULT_BUDGET_CHARS;
         } else {
             this.toolResultBudgetChars = options.toolResultBudgetChars;
+        }
+        if (options.historyBudgetChars === undefined) {
+            this.historyBudgetChars = DEFAULT_HISTORY_BUDGET_CHARS;
+        } else {
+            this.historyBudgetChars = options.historyBudgetChars;
         }
     }
 
@@ -98,7 +113,7 @@ export class ToolCallingChatOrchestrator {
             role: 'system',
             content: buildAgentSystemPrompt(this.tools.getUsageInstructions(), allToolsReadOnly, new Date()),
         }];
-        for (const turn of turns) {
+        for (const turn of selectRecentTurnsWithinBudget(turns, this.historyBudgetChars)) {
             messages.push(toLlmMessage(turn));
         }
 

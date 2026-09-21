@@ -33,15 +33,19 @@ that performs image builds; no HTTP server). The frontend lives in `frontend/`
   folder under `src/services/` (e.g. `src/services/docker/docker-manager-service.ts`).
   Only entry points (like `server.ts`, `main.ts`) belong at the `src/` root; startup
   wiring lives in `src/config/config.ts`. The folders beside `services/` are the
-  ways *into* the services, not services themselves: `routes/` + `middleware/` (REST)
-  and, in the platform backend, `mcp/` (MCP).
+  ways *into* the services, not services themselves: `routes/` + `middleware/` (REST,
+  plus `server-sent-events/` for the one route that answers with a stream) and, in
+  the platform backend, `mcp/` (MCP).
 - **Folders depend downward only — no import cycles.** Each package has one import
   direction; a folder never imports from one above it (skipping a level downward is
   fine). Platform backend: `routes/`, `middleware/`, `mcp/` → `services/`, and nothing
-  under `services/` imports from those three; `evals/`, which sits *beside* `src/`,
+  under `services/` imports from those three; `routes/` → `server-sent-events/` →
+  `services/` (it imports only `ai-agent/` and `llm/`, for the events and the
+  failures it maps); `evals/`, which sits *beside* `src/`,
   imports from `src/` and nothing in `src/` imports from it (the `test/`-folder
   relationship); inside `mcp/`, `client/` → `server/`; inside `services/`: `validation/` → `builds/`, `build-agents/` →
-  `docker/` ← `wsl/`, and `ai-agent/` → `llm/` (`docker/`, `build-agents/`, `images/`
+  `docker/` ← `wsl/`, `validation/` → `ai-agent/` (for `ChatTurn`, the type its chat
+  parser returns), and `ai-agent/` → `llm/` (`docker/`, `build-agents/`, `images/`
   and `llm/` import no other service folder, `ai-agent/` imports only `llm/`, and
   only the front doors import `validation/`); inside `llm/`, a provider subfolder
   (`ollama/`) imports the folder root, never the reverse. Builder: `worker/` → `platform/`, `git/`, `docker/`, which import
@@ -95,7 +99,9 @@ Express 5. A request flows route → service → dockerode; errors flow back thr
 error handler. MCP is the second way in: tool → service → dockerode, with errors
 flowing back through `mcp/server/tool-results-utils/run-tool-with-error-mapping.ts`.
 The AI agent is a consumer of that second door, not a third one: agent loop → MCP
-client → the same MCP tools.
+client → the same MCP tools. The chat is an ordinary REST route in front of that
+agent: `POST /api/v1/chat` → `AiAgentChatService` → agent loop, answered as a
+Server-Sent Events stream.
 
 - `src/server.ts` — composition root: imports `src/config/config.ts` (which loads
   `.env` and logs itself — `PORT`, `HOST`, `DOCKER_HOST`, `DOCKER_WSL_KEEPALIVE`,
@@ -105,11 +111,35 @@ client → the same MCP tools.
   the routes under `/api/v1`, the static frontend after them, and the error handler
   last. No logic — its one `if/else` picks
   the daemon lifecycle from the endpoint kind: a `tcp://` `DOCKER_HOST` gets the WSL
-  daemon, a `unix://` one gets `ExternalDockerDaemon`.
+  daemon, a `unix://` one gets `ExternalDockerDaemon`. The assistant is wired here
+  too: `OllamaLlmClient` + the in-process MCP tool provider (one top-level `await`
+  — connecting it is a handshake; closed again on shutdown) →
+  `ToolCallingChatOrchestrator` → `AiAgentChatService`. Building it contacts neither
+  Ollama nor Docker, so the server starts with both down.
 - `src/middleware/error-handler.ts` — the only place service errors become HTTP:
   `ValidationError` and malformed JSON → 400, `DockerApiError` → its status,
   `ImagePullError`/`BuildJobNotFoundError` → 404, `ImageNotManagedError` → 409,
-  `BuildQueueFullError` → 429, `DockerConnectionError` → 503, anything else → 500.
+  `BuildQueueFullError`/`AiAgentBusyError` → 429, `DockerConnectionError` → 503,
+  anything else → 500.
+- `src/server-sent-events/` — what `routes/post-chat.ts` needs to answer with a
+  stream, kept out of `routes/` so that folder stays the endpoint catalog.
+  `ServerSentEventStream` wraps one response: `open()` sends the headers at once
+  (the first event may be seconds away), `send(event, data)` writes one event with
+  the data as one line of JSON, and both `send` and `close` do nothing once the
+  response is over — the reader leaving mid-reply is normal (the Stop button), and
+  a write after the end would make Node emit an unhandled `error`.
+  `map-agent-failure-to-error-event.ts` is the third error mapper, beside
+  `error-handler.ts` and `run-tool-with-error-mapping.ts`: once the stream is open
+  the status line is spent, so a failed run ends the stream with an `error` event
+  (`llm_unavailable` / `llm_request_failed` / `internal`; the two model-server
+  messages pass through untouched — the provider client already says what to
+  check). The wire contract lives in its `interfaces.ts`: the agent's `AgentEvent`s
+  as they are (`delta`, `tool_call`, `tool_result`), then exactly one `done`
+  (`stopReason`, `modelCalls`, `peakPromptTokens`) or `error`; every event's data
+  carries its `type`, which is also the SSE event name. The route's order matters:
+  validate (400) → `startRun` (429 when busy) → *then* open the stream, so
+  everything refusable up front still gets a real status; `res` `close` aborts the
+  run. SSE over a `fetch` POST, not `EventSource` (GET-only).
 - `src/middleware/host-check.ts` — answers 403 itself (an HTTP gate, not a service
   error) unless the request's `Host` header names a host in `ALLOWED_HOSTS`
   (comma-separated hostnames, ports ignored; default `localhost,127.0.0.1`) and its
@@ -176,9 +206,18 @@ client → the same MCP tools.
   correct itself. `connect-in-process-mcp-tool-provider.ts` links it to a fresh
   `createPlatformMcpServer` over the SDK's `InMemoryTransport` pair, so the built-in
   agent uses exactly the catalog external clients get at `/mcp`, minus the HTTP hop.
-  (The SDK labels that transport "testing and development" and suggests a loopback
-  `StreamableHTTPClientTransport` for production in-process use — to be weighed when
-  the chat endpoint wires the agent into `server.ts`.)
+  `server.ts` and the evals share that one wiring. **The in-process transport is a
+  decision, not a leftover:** MCP is the contract between the agent and the tools,
+  the transport a deployment detail — and in this codebase HTTP marks a *process*
+  boundary (browser → platform, builder → platform), which the agent and the MCP
+  server do not have between them. The SDK labels `InMemoryTransport` "testing and
+  development" and suggests a loopback `StreamableHTTPClientTransport` instead; that
+  was weighed and declined — a server calling itself would depend on its own port
+  and its own `ALLOWED_HOSTS`, need a connection lifecycle per chat, and make
+  production run a path the evals do not test. The transport is ~40 lines handing
+  each message object to the other end's handler; what it omits (serialization,
+  sessions, auth) an in-process link does not need. Because the agent only sees
+  `ToolProvider`, swapping the transport stays a one-file change.
 - `src/services/llm/` — the provider-agnostic seam to a language model: `LlmClient`
   (`streamChat(request, onDelta, signal)`), the message and tool-call types, and the
   two failures — `LlmUnavailableError` (unreachable, or silent past the idle
@@ -210,12 +249,24 @@ client → the same MCP tools.
   per-turn cap (5) are refused in band, and results always go back in call order,
   one message per call; tool results share a character budget (12000 per run, at
   most half of it per turn, split across the turn's calls —
-  `trim-tool-result-to-budget.ts` keeps head + tail). Progress is reported as
-  `AgentEvent`s (`delta` / `tool_call` / `tool_result` — the future SSE events); the
+  `trim-tool-result-to-budget.ts` keeps head + tail); and the conversation has a
+  character budget of its own (8000 — what an 8192-token window leaves beside the
+  system prompt, a spent tool-result budget and the answer):
+  `select-recent-turns-within-budget.ts` gives the model the newest turns that fit —
+  the newest always, no gaps, never opening on an assistant turn — because the chat
+  UI sends the whole conversation every time and Ollama truncates silently. Progress
+  is reported as `AgentEvent`s (`delta` / `tool_call` / `tool_result` — sent as SSE
+  events by the chat route as they are); the
   resolved `AgentRunResult` carries the executed calls and the peak prompt size,
   which is how context pressure is watched. `build-agent-system-prompt.ts` takes
   `now` as a parameter, fixed per run, so every model call of a run shares one
-  prefix (prompt-cache reuse).
+  prefix (prompt-cache reuse). `AiAgentChatService` is the chat route's door to the
+  loop and runs one conversation at a time: one GPU, so a second run would only
+  queue inside Ollama, silent long enough to trip the 120s idle watchdog — it is
+  refused instead (`AiAgentBusyError` → 429). `startRun` is deliberately not `async`:
+  the refusal is thrown synchronously, before the route has opened its stream, and
+  the slot is freed in a `finally` — answered, failed or aborted. The evals bypass
+  it and construct the orchestrator directly.
 - `evals/` (beside `src/`, not under it) — terminal entry points that drive the agent
   without HTTP. They stand to `src/` as a `test/` folder would: they import from
   `../src/` and exercise it, nothing in `src/` knows they exist, and they are not
@@ -287,7 +338,12 @@ client → the same MCP tools.
 - `src/services/validation/` — hand-rolled request-body validators (no schema
   library), one function per endpoint body, throwing `ValidationError` (→ 400).
   The container name/ports/env field rules live once in `parse-container-fields.ts`,
-  shared by the create-container and start-build parsers.
+  shared by the create-container and start-build parsers. `parse-chat-request.ts`
+  guards against junk, not against long conversations (that is the agent's history
+  window): at most 100 turns, the last one a `user` turn of at most 4000 characters
+  — the one turn the window always keeps, so the one whose size must be bounded.
+  Consecutive `user` turns are valid: the UI drops a reply that failed before its
+  first fragment.
 - `src/services/wsl/` — the WSL deployment adapter for the docker service's
   daemon-lifecycle contract. `WslDockerDaemon` implements `DockerDaemonLifecycle`:
   boots the WSL distro on demand and holds it open (operational details under
@@ -354,7 +410,9 @@ classes; JSX files use `.tsx`).
   `components/app-layout.tsx` (AntD sidebar + `<Outlet />`); menu keys are the route paths.
 - `src/components/` — one component per file (e.g. `container-list.tsx`).
 - `src/fetchers/` — all backend API access. `DockerFetcherService` (axios) throws only
-  `DockerFetcherError`, so axios never leaks into components. Wire types in
+  `DockerFetcherError`, so axios never leaks into components. `ChatFetcherService` is
+  the one fetcher on plain `fetch` — a streamed reply has to be read while it
+  arrives, which is `fetch`'s response body — and throws only `ChatFetcherError`. Wire types in
   `fetchers/interfaces.ts` mirror the platform backend's `interfaces.ts`, except
   JSON-serialized fields (backend `Date` → frontend ISO `string`).
 - **Route navigation renders a real anchor.** Anything the user clicks to go somewhere
@@ -443,9 +501,16 @@ classes; JSX files use `.tsx`).
   only. It talks to the `ChatFetcher` interface (`fetchers/interfaces.ts`):
   `streamReply(turns, onDelta, signal)` — streaming-shaped from the start; an abort
   resolves (Stop is not an error), failures reject with `ChatFetcherError`.
-  `StubChatFetcher` is temporary scaffolding wired in `App.tsx` (canned reply;
-  sending `/fail` shows the error state) until the platform's chat endpoint exists —
-  the browser never calls an LLM provider directly.
+  `ChatFetcherService` (wired in `App.tsx`) is the real one: `POST /api/v1/chat`
+  with the conversation (only the newest 100 turns — the backend's cap), the reply
+  read as Server-Sent Events by `read-server-sent-events-stream.ts` (a
+  `getReader()` loop, since `EventSource` is GET-only; line and UTF-8 buffering
+  across chunks like the backend's `read-ndjson-stream.ts`). `delta` feeds
+  `onDelta`; the stream must end with `done` — an `error` event rejects with its
+  message, and so does a body that ends with neither (the backend went away). A
+  non-2xx before the stream (400, 429 "busy", 403) rejects with the error handler's
+  `message`. `tool_call`/`tool_result` arrive but are not shown yet. The browser
+  never calls an LLM provider directly.
 - The dev server proxies `/api` → `http://127.0.0.1:3000` (`vite.config.ts`); the backend
   deliberately has no CORS middleware, so never call the backend origin directly. The
   fetcher's base URL is the relative `/api/v1`, which is also what lets the app image
@@ -471,7 +536,14 @@ classes; JSX files use `.tsx`).
   the agent loop, the system prompt, a tool's name/description/schema, or the model;
   `npm run ask:ai-agent -- "<question>"` for a live run against the real daemon.
   Ollama runs natively in the WSL distro (systemd service, `127.0.0.1:11434`), so it
-  is up only while the distro is.
+  is up only while the distro is — and nothing boots the distro for a chat (only a
+  failed Docker request does): the chat is deliberately not coupled to WSL, a down
+  model server is an `llm_unavailable` error event.
+- Chat endpoint: `curl -N -X POST http://127.0.0.1:3000/api/v1/chat -H "Content-Type:
+  application/json" -d '{"turns":[{"role":"user","text":"which containers are
+  running?"}]}'` prints the event stream as it arrives (`-N` turns curl's own
+  buffering off). A second request while one runs must get 429; killing the first
+  curl must free the slot within a moment (the disconnect aborts the run).
 - Run locally: `npm run dev` in `platform-backend/` (port 3000) and in
   `builder-service-backend/` (no port — it polls the platform), `npm run dev` in
   `frontend/`. Builds need both backend processes up.

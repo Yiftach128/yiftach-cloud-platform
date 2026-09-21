@@ -442,11 +442,76 @@ export interface ChatTurn {
     text: string;
 }
 
+/** One event of a Server-Sent Events stream, as read off the wire: its name and its undecoded data. */
+export interface ServerSentEvent {
+    /** The `event:` field; "message" when the stream gave none (the SSE default). */
+    event: string;
+    /** The `data:` field — several data lines joined by newlines. */
+    data: string;
+}
+
+/*
+ * The events of a streamed chat reply (POST /chat) — mirrors
+ * platform-backend/src/server-sent-events/interfaces.ts and the AgentEvent
+ * types of platform-backend/src/services/ai-agent/interfaces.ts. `delta`,
+ * `tool_call` and `tool_result` arrive while the agent works; exactly one
+ * `done` or `error` ends the stream. Each event's data carries its `type`,
+ * which is also the SSE event name.
+ */
+
+/** A fragment of the reply's text, as the model generates it. */
+export interface ChatDeltaStreamEvent {
+    type: 'delta';
+    text: string;
+}
+
+/** The model asked for a tool; the call is about to run. */
+export interface ChatToolCallStreamEvent {
+    type: 'tool_call';
+    name: string;
+    arguments: Record<string, unknown>;
+}
+
+/** A tool call finished; `text` is the result exactly as the model reads it. */
+export interface ChatToolResultStreamEvent {
+    type: 'tool_result';
+    name: string;
+    isError: boolean;
+    text: string;
+}
+
+/** Why a run ended: the model answered, it hit its model-call cap, or the run was aborted. */
+export type ChatStopReason = 'answered' | 'model_call_limit' | 'aborted';
+
+/** The run ended normally; the text already streamed is the reply. */
+export interface ChatDoneStreamEvent {
+    type: 'done';
+    stopReason: ChatStopReason;
+    modelCalls: number;
+    /** The largest prompt of the run, in tokens — how close it came to the model's context window. */
+    peakPromptTokens: number;
+}
+
+export type ChatStreamErrorCode = 'llm_unavailable' | 'llm_request_failed' | 'internal';
+
+/** The run failed after the stream had opened; `message` is written for the person chatting. */
+export interface ChatErrorStreamEvent {
+    type: 'error';
+    code: ChatStreamErrorCode;
+    message: string;
+}
+
+export type ChatStreamEvent =
+    | ChatDeltaStreamEvent
+    | ChatToolCallStreamEvent
+    | ChatToolResultStreamEvent
+    | ChatDoneStreamEvent
+    | ChatErrorStreamEvent;
+
 /**
- * The seam between the chat UI and whatever answers it. Today that is
- * StubChatFetcher; the real implementation will stream from the platform
- * backend — never from an LLM provider directly, so the API key stays
- * server-side.
+ * The seam between the chat UI and whatever answers it — ChatFetcherService,
+ * which streams from the platform backend. Never from an LLM provider
+ * directly: the browser does not know which model answers, or where it runs.
  */
 export interface ChatFetcher {
     /**

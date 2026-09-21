@@ -6,6 +6,8 @@
 import express from 'express';
 
 import { config } from './config/config.ts';
+import { connectInProcessMcpToolProvider } from './mcp/client/connect-in-process-mcp-tool-provider.ts';
+import type { PlatformMcpServices } from './mcp/server/interfaces.ts';
 import { McpHttpEndpoint } from './mcp/server/mcp-http-endpoint.ts';
 import { errorHandler } from './middleware/error-handler.ts';
 import { hostCheck } from './middleware/host-check.ts';
@@ -29,10 +31,13 @@ import { postBuildRoute } from './routes/post-build.ts';
 import { postBuildsQueueClaimRoute } from './routes/post-builds-queue-claim.ts';
 import { postBuildsQueueLogsRoute } from './routes/post-builds-queue-logs.ts';
 import { postBuildsQueueResultRoute } from './routes/post-builds-queue-result.ts';
+import { postChatRoute } from './routes/post-chat.ts';
 import { postContainerRestartRoute } from './routes/post-container-restart.ts';
 import { postContainerStartRoute } from './routes/post-container-start.ts';
 import { postContainerStopRoute } from './routes/post-container-stop.ts';
 import { postContainerRoute } from './routes/post-container.ts';
+import { AiAgentChatService } from './services/ai-agent/ai-agent-chat-service.ts';
+import { ToolCallingChatOrchestrator } from './services/ai-agent/tool-calling-chat-orchestrator.ts';
 import { BuildAgentRegistry } from './services/build-agents/build-agent-registry.ts';
 import { BuildJobRegistry } from './services/builds/build-job-registry.ts';
 import { BuildQueueService } from './services/builds/build-queue-service.ts';
@@ -41,6 +46,7 @@ import { DockerManagerService } from './services/docker/docker-manager-service.t
 import { ExternalDockerDaemon } from './services/docker/external-docker-daemon.ts';
 import { resolveDockerEndpoint } from './services/docker/resolve-docker-endpoint.ts';
 import { ImagePresetService } from './services/images/image-preset-service.ts';
+import { OllamaLlmClient } from './services/llm/ollama/ollama-llm-client.ts';
 import { bootstrapWslDocker } from './services/wsl/bootstrap-wsl-docker.ts';
 import type { WslDockerDaemon } from './services/wsl/wsl-docker-daemon.ts';
 
@@ -74,7 +80,19 @@ const imagePresets = new ImagePresetService();
 const buildRegistry = new BuildJobRegistry();
 const imageBuilds = new BuildQueueService(buildRegistry, daemon, config.BUILD_STALE_TIMEOUT_MS);
 const buildAgents = new BuildAgentRegistry();
-const mcp = new McpHttpEndpoint({ docker: docker, images: dockerImages, buildAgents: buildAgents });
+const mcpServices: PlatformMcpServices = { docker: docker, images: dockerImages, buildAgents: buildAgents };
+const mcp = new McpHttpEndpoint(mcpServices);
+
+// The assistant reaches the platform's tools through MCP like any other client —
+// over the in-process transport, because it lives in this process: the same
+// server factory as /mcp, so the same catalog, validation and error mapping.
+const llm = new OllamaLlmClient({
+    baseUrl: config.OLLAMA_URL,
+    model: config.OLLAMA_MODEL,
+    contextTokens: config.OLLAMA_NUM_CTX,
+});
+const aiAgentTools = await connectInProcessMcpToolProvider(mcpServices);
+const aiAgentChat = new AiAgentChatService(new ToolCallingChatOrchestrator({ llm: llm, tools: aiAgentTools }));
 
 const app = express();
 app.use(hostCheck(config.ALLOWED_HOSTS)); // first: nothing answers a request from a foreign host or origin
@@ -102,6 +120,7 @@ app.use('/api/v1', postBuildsQueueLogsRoute(imageBuilds));
 app.use('/api/v1', postBuildsQueueResultRoute(imageBuilds));
 app.use('/api/v1', getBuildAgentsRoute(buildAgents));
 app.use('/api/v1', postBuildAgentsHeartbeatRoute(buildAgents));
+app.use('/api/v1', postChatRoute(aiAgentChat));
 app.use(staticFrontend(config.STATIC_DIR)); // the built UI, after the API; serves nothing when STATIC_DIR is empty
 app.use(errorHandler);
 
@@ -120,6 +139,7 @@ for (const signal of shutdownSignals) {
         console.log(`${signal} received, shutting down...`);
         imageBuilds.stop();
         void mcp.close(); // ends open MCP streams, which would otherwise hold server.close() up
+        void aiAgentTools.close();
         daemon.stop();
         server.close(() => process.exit(0));
         // Fallback if connections linger past close.
