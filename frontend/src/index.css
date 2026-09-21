@@ -39,6 +39,130 @@ textarea,
     transform: scale(1.08);
 }
 
+/* Assistant replies are rendered markdown (chat-reply-markdown.tsx). The
+   renderer emits bare elements — not antd, so the "prefer tokens" rule doesn't
+   reach them, and descendants cannot be styled inline. Everything is sized for
+   the 380px chat card: tight block spacing, headings barely above body size
+   (a model's "###" is emphasis here, not a page title), square grey surfaces
+   like the rest of the app. anywhere-wrapping stops a long token (an image
+   digest, a URL) from widening the card. */
+.app-chat-markdown {
+    overflow-wrap: anywhere;
+}
+
+.app-chat-markdown p,
+.app-chat-markdown ul,
+.app-chat-markdown ol,
+.app-chat-markdown pre,
+.app-chat-markdown table,
+.app-chat-markdown blockquote {
+    margin: 0 0 8px;
+}
+
+.app-chat-markdown h1,
+.app-chat-markdown h2,
+.app-chat-markdown h3,
+.app-chat-markdown h4,
+.app-chat-markdown h5,
+.app-chat-markdown h6 {
+    margin: 12px 0 4px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: inherit;
+}
+
+.app-chat-markdown h1,
+.app-chat-markdown h2 {
+    font-size: 15px;
+}
+
+/* The reply's outer edges belong to the message list's own gap. */
+.app-chat-markdown > :first-child {
+    margin-top: 0;
+}
+
+.app-chat-markdown > :last-child {
+    margin-bottom: 0;
+}
+
+.app-chat-markdown ul,
+.app-chat-markdown ol {
+    padding-left: 20px;
+}
+
+.app-chat-markdown li > ul,
+.app-chat-markdown li > ol {
+    margin-bottom: 0;
+}
+
+.app-chat-markdown a {
+    color: #1677ff;
+    text-decoration: none;
+}
+
+.app-chat-markdown a:hover {
+    text-decoration: underline;
+}
+
+.app-chat-markdown code {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 12px;
+    background: #f5f5f5;
+    padding: 1px 4px;
+}
+
+/* Code blocks wrap like the log panes do (quoted log lines are their usual
+   content) rather than scrolling sideways inside a narrow card. */
+.app-chat-markdown pre {
+    padding: 8px;
+    background: #f5f5f5;
+    border: 1px solid #d9d9d9;
+    white-space: pre-wrap;
+}
+
+.app-chat-markdown pre code {
+    background: none;
+    padding: 0;
+}
+
+/* A table is the one block that may be wider than the card: display block
+   makes the element itself the scroll container (a real table box ignores
+   overflow), and the rows keep forming a table inside it. Cells go back to
+   breaking between words only — with anywhere-wrapping a column could be
+   squeezed down to one letter per line instead of the table scrolling. */
+.app-chat-markdown table {
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+}
+
+.app-chat-markdown th,
+.app-chat-markdown td {
+    padding: 4px 8px;
+    border: 1px solid #d9d9d9;
+    text-align: left;
+    overflow-wrap: normal;
+}
+
+.app-chat-markdown th {
+    font-weight: 600;
+    background: #fafafa;
+}
+
+.app-chat-markdown blockquote {
+    padding-left: 8px;
+    border-left: 3px solid #d9d9d9;
+    color: rgba(0, 0, 0, 0.65);
+}
+
+.app-chat-markdown hr {
+    margin: 12px 0;
+    border: 0;
+    border-top: 1px solid #d9d9d9;
+}
+
 /* Height comes from app-layout.tsx (headerRowHeight), shared with the content-side
    header strip so the two divider halves align into one continuous line. */
 .app-logo {

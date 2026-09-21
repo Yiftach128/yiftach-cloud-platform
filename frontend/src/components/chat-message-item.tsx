@@ -1,15 +1,11 @@
 import { Alert, Flex, Typography } from 'antd';
 import type { CSSProperties, ReactElement } from 'react';
 
+import ChatReplyMarkdown from './chat-reply-markdown.tsx';
 import type { ChatMessage, ChatMessageItemProps } from './interfaces.ts';
 
-/* pre-wrap keeps the reply's own line breaks; anywhere-wrapping stops a long
+/* pre-wrap keeps the user's own line breaks; anywhere-wrapping stops a long
    token (an image digest, a URL) from widening the card. */
-const messageTextStyle: CSSProperties = {
-    whiteSpace: 'pre-wrap',
-    overflowWrap: 'anywhere',
-};
-
 const userMessageStyle: CSSProperties = {
     whiteSpace: 'pre-wrap',
     overflowWrap: 'anywhere',
@@ -19,8 +15,9 @@ const userMessageStyle: CSSProperties = {
 };
 
 /**
- * One chat message. User messages sit right in a grey block; assistant replies
- * run full-width as plain text, which suits long answers in a narrow card. The
+ * One chat message. User messages sit right in a grey block, shown exactly as
+ * typed; assistant replies run full-width — which suits long answers in a
+ * narrow card — and are rendered as markdown, the format models answer in. The
  * .app-chat-message class opts the text back into selection (index.css).
  */
 function ChatMessageItem(props: ChatMessageItemProps): ReactElement {
@@ -36,7 +33,7 @@ function ChatMessageItem(props: ChatMessageItemProps): ReactElement {
 
     let replyText: ReactElement | null = null;
     if (message.text !== '') {
-        replyText = <div className="app-chat-message" style={messageTextStyle}>{message.text}</div>;
+        replyText = <ChatReplyMarkdown text={message.text} />;
     } else if (message.status === 'streaming') {
         /* Nothing has arrived yet. */
         replyText = <Typography.Text type="secondary">Thinking…</Typography.Text>;

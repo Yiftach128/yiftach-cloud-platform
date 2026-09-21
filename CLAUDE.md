@@ -510,7 +510,19 @@ classes; JSX files use `.tsx`).
   message, and so does a body that ends with neither (the backend went away). A
   non-2xx before the stream (400, 429 "busy", 403) rejects with the error handler's
   `message`. `tool_call`/`tool_result` arrive but are not shown yet. The browser
-  never calls an LLM provider directly.
+  never calls an LLM provider directly. Assistant replies are rendered as markdown
+  — the format models answer in — by `chat-reply-markdown.tsx` (`react-markdown` +
+  `remark-gfm` for tables + `remark-breaks`, so a model's single newline stays a
+  line break); user messages stay plain text, exactly as typed. A reply can quote
+  tool results (container logs, image labels), so it is treated as untrusted: raw
+  HTML is never interpreted (no `rehype-raw` — keep it that way), `<img>` is
+  disallowed (an image is fetched without a click, which would let a log line
+  carry what the model read to a foreign server), and links open in a new tab
+  (`chat-reply-markdown-link.tsx`). The component is memoized on the text, because
+  every streamed fragment re-renders the whole message list. The element styling
+  is `.app-chat-markdown` in `index.css` (bare elements, not antd — the ReactFlow
+  situation), sized for the 380px card: code blocks wrap like the log panes, and
+  a table is the one block that may scroll sideways.
 - The dev server proxies `/api` → `http://127.0.0.1:3000` (`vite.config.ts`); the backend
   deliberately has no CORS middleware, so never call the backend origin directly. The
   fetcher's base URL is the relative `/api/v1`, which is also what lets the app image

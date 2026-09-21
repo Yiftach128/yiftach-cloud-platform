@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 
 import type { DockerFetcherService } from '../fetchers/docker-fetcher-service.ts';
 import type { BuildJob, ChatFetcher, ChatRole, ContainerState, ImagePreset, PresetEnvVar } from '../fetchers/interfaces.ts';
@@ -47,6 +47,17 @@ export interface ChatMessageListProps {
 
 export interface ChatMessageItemProps {
     message: ChatMessage;
+}
+
+export interface ChatReplyMarkdownProps {
+    /** The assistant reply as the model wrote it — markdown, possibly still streaming in. */
+    text: string;
+}
+
+/** What the markdown renderer hands the component standing in for an `<a>`. */
+export interface ChatReplyMarkdownLinkProps {
+    href?: string;
+    children?: ReactNode;
 }
 
 export interface ChatComposerProps {

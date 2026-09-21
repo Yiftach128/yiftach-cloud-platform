@@ -124,7 +124,16 @@ app.use('/api/v1', postChatRoute(aiAgentChat));
 app.use(staticFrontend(config.STATIC_DIR)); // the built UI, after the API; serves nothing when STATIC_DIR is empty
 app.use(errorHandler);
 
-const server = app.listen(config.PORT, config.HOST, () => {
+// Express 5 hands a failed bind (the port is taken) to this same callback instead
+// of throwing. Unchecked, the "listening" line is printed for a server that never
+// bound and the process ends quietly — leaving whatever else holds the port to
+// answer the frontend's requests.
+const server = app.listen(config.PORT, config.HOST, (error?: Error) => {
+    if (error !== undefined) {
+        console.error(`platform-backend could not listen on http://${config.HOST}:${config.PORT}: ${error.message}`);
+        daemon.stop(); // the WSL keepalive is a child process — it would outlive the exit
+        process.exit(1);
+    }
     console.log(`platform-backend listening on http://${config.HOST}:${config.PORT} -> docker at ${docker.baseUrl}`);
 });
 imageBuilds.start();
