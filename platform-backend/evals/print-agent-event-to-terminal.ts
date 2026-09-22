@@ -13,7 +13,7 @@ export function printAgentEventToTerminal(event: AgentEvent): void {
         return;
     }
     if (event.type === 'tool_call') {
-        process.stdout.write(`\n    -> ${event.name} ${JSON.stringify(event.arguments)}\n`);
+        process.stdout.write(`\n    -> #${event.callId} ${event.name} ${JSON.stringify(event.arguments)}\n`);
         return;
     }
     let verdict: string;
@@ -29,5 +29,5 @@ export function printAgentEventToTerminal(event: AgentEvent): void {
     } else {
         preview = firstLine;
     }
-    process.stdout.write(`    <- ${event.name}: ${verdict}, ${event.text.length} chars  ${preview}\n`);
+    process.stdout.write(`    <- #${event.callId} ${event.name}: ${verdict}, ${event.text.length} chars  ${preview}\n`);
 }

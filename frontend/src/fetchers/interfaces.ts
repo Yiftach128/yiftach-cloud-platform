@@ -468,13 +468,20 @@ export interface ChatDeltaStreamEvent {
 /** The model asked for a tool; the call is about to run. */
 export interface ChatToolCallStreamEvent {
     type: 'tool_call';
+    /** Numbers the reply's tool calls from 1 in the order the model asked; the call's `tool_result` carries the same id. */
+    callId: number;
     name: string;
     arguments: Record<string, unknown>;
 }
 
-/** A tool call finished; `text` is the result exactly as the model reads it. */
+/**
+ * A tool call finished; `text` is the result exactly as the model reads it.
+ * `callId` names the call it answers — the results of a concurrent batch
+ * arrive in the order they finished, not the order asked.
+ */
 export interface ChatToolResultStreamEvent {
     type: 'tool_result';
+    callId: number;
     name: string;
     isError: boolean;
     text: string;
@@ -508,6 +515,13 @@ export type ChatStreamEvent =
     | ChatDoneStreamEvent
     | ChatErrorStreamEvent;
 
+/** What a `ChatFetcher` hands the UI while a reply streams: every event of the stream but `error`, which becomes the rejection. */
+export type ChatReplyEvent =
+    | ChatDeltaStreamEvent
+    | ChatToolCallStreamEvent
+    | ChatToolResultStreamEvent
+    | ChatDoneStreamEvent;
+
 /**
  * The seam between the chat UI and whatever answers it — ChatFetcherService,
  * which streams from the platform backend. Never from an LLM provider
@@ -516,10 +530,11 @@ export type ChatStreamEvent =
 export interface ChatFetcher {
     /**
      * Sends the conversation so far and streams the assistant's reply:
-     * `onDelta` receives each text fragment in order, and the promise resolves
-     * once the reply is complete. Aborting `signal` ends the stream early and
-     * the promise still resolves — callers tell the two apart by
-     * `signal.aborted`. Rejects only with ChatFetcherError.
+     * `onEvent` receives each event in order — text fragments, tool calls and
+     * their results, then the `done` that closes the reply — and the promise
+     * resolves once the reply is complete. Aborting `signal` ends the stream
+     * early, without a `done`, and the promise still resolves — callers tell
+     * the two apart by `signal.aborted`. Rejects only with ChatFetcherError.
      */
-    streamReply(turns: ChatTurn[], onDelta: (textDelta: string) => void, signal: AbortSignal): Promise<void>;
+    streamReply(turns: ChatTurn[], onEvent: (event: ChatReplyEvent) => void, signal: AbortSignal): Promise<void>;
 }

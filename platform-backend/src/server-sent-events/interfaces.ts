@@ -2,9 +2,11 @@
  * The events of a streamed chat reply (POST /chat), as they go over the wire.
  *
  * While the agent works, its own `AgentEvent`s are sent as they are (`delta`,
- * `tool_call`, `tool_result`). Exactly one of the two events declared here
- * ends the stream. Every event's data carries its `type`, which is also the
- * SSE event name. The frontend mirrors these in `fetchers/interfaces.ts`.
+ * `tool_call`, `tool_result` — the last two paired by their `callId`, since a
+ * concurrent batch reports its results in the order they finished). Exactly one
+ * of the two events declared here ends the stream. Every event's data carries
+ * its `type`, which is also the SSE event name. The frontend mirrors these in
+ * `fetchers/interfaces.ts`.
  */
 
 import type { AgentEvent, AgentStopReason } from '../services/ai-agent/interfaces.ts';

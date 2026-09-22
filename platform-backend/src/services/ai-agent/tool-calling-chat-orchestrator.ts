@@ -122,6 +122,8 @@ export class ToolCallingChatOrchestrator {
         let remainingBudgetChars: number = this.toolResultBudgetChars;
         let peakPromptTokens: number = 0;
         let modelCalls: number = 0;
+        // The id the next tool call gets: whoever watches the events pairs a result with its call by it.
+        let nextCallId: number = 1;
 
         const finish = (finalText: string, stopReason: AgentStopReason): AgentRunResult => {
             return {
@@ -168,8 +170,9 @@ export class ToolCallingChatOrchestrator {
                 Math.floor(this.toolResultBudgetChars * TURN_BUDGET_SHARE),
             );
             const outcomes: ToolCallOutcome[] = await this.runToolCalls(
-                reply.toolCalls, toolsByName, executedCallKeys, turnBudgetChars, onEvent, signal,
+                reply.toolCalls, nextCallId, toolsByName, executedCallKeys, turnBudgetChars, onEvent, signal,
             );
+            nextCallId = nextCallId + reply.toolCalls.length;
 
             // Results go back in the order the calls were asked, whatever order they finished in.
             for (let index = 0; index < reply.toolCalls.length; index++) {
@@ -189,9 +192,14 @@ export class ToolCallingChatOrchestrator {
         }
     }
 
-    /** Runs the tool calls of one model turn and returns one outcome per call, in call order. */
+    /**
+     * Runs the tool calls of one model turn and returns one outcome per call, in
+     * call order. The calls are numbered from `firstCallId` in that same order,
+     * refused ones included.
+     */
     private async runToolCalls(
         calls: LlmToolCall[],
+        firstCallId: number,
         toolsByName: Map<string, AgentTool>,
         executedCallKeys: Set<string>,
         turnBudgetChars: number,
@@ -215,32 +223,41 @@ export class ToolCallingChatOrchestrator {
 
         let outcomes: ToolCallOutcome[];
         if (everyCallReadOnly) {
-            outcomes = await Promise.all(acceptedCalls.map((call: LlmToolCall) => {
-                return this.runOneToolCall(call, toolsByName, executedCallKeys, perCallBudgetChars, onEvent, signal);
+            outcomes = await Promise.all(acceptedCalls.map((call: LlmToolCall, index: number) => {
+                return this.runOneToolCall(
+                    firstCallId + index, call, toolsByName, executedCallKeys, perCallBudgetChars, onEvent, signal,
+                );
             }));
         } else {
             outcomes = [];
+            let callId: number = firstCallId;
             for (const call of acceptedCalls) {
                 outcomes.push(
-                    await this.runOneToolCall(call, toolsByName, executedCallKeys, perCallBudgetChars, onEvent, signal),
+                    await this.runOneToolCall(
+                        callId, call, toolsByName, executedCallKeys, perCallBudgetChars, onEvent, signal,
+                    ),
                 );
+                callId = callId + 1;
             }
         }
 
+        let refusedCallId: number = firstCallId + acceptedCalls.length;
         for (const call of refusedCalls) {
             const refusal: ToolCallOutcome = {
                 text: `Not run: at most ${this.maxToolCallsPerTurn} tool calls are allowed per turn. `
                     + 'Ask again in your next turn if you still need it.',
                 isError: true,
             };
-            onEvent({ type: 'tool_call', name: call.name, arguments: call.arguments });
-            onEvent({ type: 'tool_result', name: call.name, isError: true, text: refusal.text });
+            onEvent({ type: 'tool_call', callId: refusedCallId, name: call.name, arguments: call.arguments });
+            onEvent({ type: 'tool_result', callId: refusedCallId, name: call.name, isError: true, text: refusal.text });
             outcomes.push(refusal);
+            refusedCallId = refusedCallId + 1;
         }
         return outcomes;
     }
 
     private async runOneToolCall(
+        callId: number,
         call: LlmToolCall,
         toolsByName: Map<string, AgentTool>,
         executedCallKeys: Set<string>,
@@ -248,13 +265,13 @@ export class ToolCallingChatOrchestrator {
         onEvent: (event: AgentEvent) => void,
         signal: AbortSignal,
     ): Promise<ToolCallOutcome> {
-        onEvent({ type: 'tool_call', name: call.name, arguments: call.arguments });
+        onEvent({ type: 'tool_call', callId: callId, name: call.name, arguments: call.arguments });
         const outcome: ToolCallOutcome = await this.resolveToolCall(call, toolsByName, executedCallKeys, signal);
         const trimmed: ToolCallOutcome = {
             text: trimToolResultToBudget(outcome.text, budgetChars),
             isError: outcome.isError,
         };
-        onEvent({ type: 'tool_result', name: call.name, isError: trimmed.isError, text: trimmed.text });
+        onEvent({ type: 'tool_result', callId: callId, name: call.name, isError: trimmed.isError, text: trimmed.text });
         return trimmed;
     }
 

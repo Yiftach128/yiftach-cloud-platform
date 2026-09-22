@@ -57,13 +57,20 @@ export interface AgentTextDeltaEvent {
 /** The model asked for a tool; the call is about to run. */
 export interface AgentToolCallEvent {
     type: 'tool_call';
+    /** Numbers the run's tool calls from 1 in the order the model asked for them; the call's `tool_result` carries the same id. */
+    callId: number;
     name: string;
     arguments: Record<string, unknown>;
 }
 
-/** A tool call finished; `text` is the result exactly as the model will read it (already trimmed). */
+/**
+ * A tool call finished; `text` is the result exactly as the model will read it
+ * (already trimmed). `callId` names the `tool_call` it answers — the results of
+ * a concurrent batch arrive in the order they finished, not the order asked.
+ */
 export interface AgentToolResultEvent {
     type: 'tool_result';
+    callId: number;
     name: string;
     isError: boolean;
     text: string;

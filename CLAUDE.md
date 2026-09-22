@@ -134,7 +134,8 @@ Server-Sent Events stream.
   (`llm_unavailable` / `llm_request_failed` / `internal`; the two model-server
   messages pass through untouched — the provider client already says what to
   check). The wire contract lives in its `interfaces.ts`: the agent's `AgentEvent`s
-  as they are (`delta`, `tool_call`, `tool_result`), then exactly one `done`
+  as they are (`delta`, `tool_call`, `tool_result` — the last two paired by
+  `callId`), then exactly one `done`
   (`stopReason`, `modelCalls`, `peakPromptTokens`) or `error`; every event's data
   carries its `type`, which is also the SSE event name. The route's order matters:
   validate (400) → `startRun` (429 when busy) → *then* open the stream, so
@@ -256,7 +257,10 @@ Server-Sent Events stream.
   the newest always, no gaps, never opening on an assistant turn — because the chat
   UI sends the whole conversation every time and Ollama truncates silently. Progress
   is reported as `AgentEvent`s (`delta` / `tool_call` / `tool_result` — sent as SSE
-  events by the chat route as they are); the
+  events by the chat route as they are); a run numbers its tool calls from 1 in
+  the order the model asked, refused ones included, and both events of a call
+  carry that `callId` — a concurrent batch reports its results as they finish,
+  so a watcher pairs them by id, never by name or position; the
   resolved `AgentRunResult` carries the executed calls and the peak prompt size,
   which is how context pressure is watched. `build-agent-system-prompt.ts` takes
   `now` as a parameter, fixed per run, so every model call of a run shares one
@@ -499,18 +503,39 @@ classes; JSX files use `.tsx`).
   `chat-panel.tsx` owns the conversation (messages + composer) and knows nothing
   about where it is mounted, so moving it to a docked panel means replacing the shell
   only. It talks to the `ChatFetcher` interface (`fetchers/interfaces.ts`):
-  `streamReply(turns, onDelta, signal)` — streaming-shaped from the start; an abort
+  `streamReply(turns, onEvent, signal)` — streaming-shaped from the start; an abort
   resolves (Stop is not an error), failures reject with `ChatFetcherError`.
   `ChatFetcherService` (wired in `App.tsx`) is the real one: `POST /api/v1/chat`
   with the conversation (only the newest 100 turns — the backend's cap), the reply
   read as Server-Sent Events by `read-server-sent-events-stream.ts` (a
   `getReader()` loop, since `EventSource` is GET-only; line and UTF-8 buffering
-  across chunks like the backend's `read-ndjson-stream.ts`). `delta` feeds
-  `onDelta`; the stream must end with `done` — an `error` event rejects with its
+  across chunks like the backend's `read-ndjson-stream.ts`). `delta`, `tool_call`,
+  `tool_result` and `done` go to `onEvent` as they are (`ChatReplyEvent`); the
+  stream must end with `done` — an `error` event rejects with its
   message, and so does a body that ends with neither (the backend went away). A
   non-2xx before the stream (400, 429 "busy", 403) rejects with the error handler's
-  `message`. `tool_call`/`tool_result` arrive but are not shown yet. The browser
-  never calls an LLM provider directly. Assistant replies are rendered as markdown
+  `message`. The browser never calls an LLM provider directly. The panel folds
+  each event into the reply message it belongs to (`applyReplyEvent`): text
+  fragments grow `text`, and the tool events grow `toolCalls` — one `ChatToolCall`
+  per call, paired to its result by `callId`, never by name or position (a
+  concurrent batch reports results as they finish). The turns sent back stay
+  `{role, text}`: tool calls are not part of the history the model reads.
+  **Tool-call tags** (`chat-tool-call-tags.tsx`) draw that list above the reply
+  text, in call order: one antd `Tag` per call, labeled with the raw MCP tool name
+  plus its primitive arguments (`chat-tool-call-formatters.ts`) — the raw name on
+  purpose, it is where a reader sees which tool the model reached for — a spinner
+  while it runs, a check or a cross once its result is in, and a dash when the
+  reply ended first (settling the reply, on Stop or a failure, settles every
+  still-running call as `stopped`). Clicking a tag (or Enter/Space — it is a
+  focusable `role="button"`) opens `chat-tool-call-details.tsx` under the row:
+  the arguments as JSON and the result text exactly as the model read it, on the
+  log panes' dark monospace surface, height-capped and scrolling inside the 380px
+  card — inline rather than a `Popover`, which the fixed card would clip; it
+  carries `.app-log-output`, so its text is selectable. The "Thinking…"
+  placeholder shows only while the reply has neither text nor a running tag. Of
+  `done`, the UI shows one thing: a `model_call_limit` stop reason becomes a small
+  note under the reply; the call and token counts stay off the UI (they are for
+  the evals and the logs). Assistant replies are rendered as markdown
   — the format models answer in — by `chat-reply-markdown.tsx` (`react-markdown` +
   `remark-gfm` for tables + `remark-breaks`, so a model's single newline stays a
   line break); user messages stay plain text, exactly as typed. A reply can quote

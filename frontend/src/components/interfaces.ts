@@ -23,6 +23,24 @@ export interface ChatBubbleProps {
  */
 export type ChatMessageStatus = 'streaming' | 'done' | 'stopped' | 'error';
 
+/**
+ * How far one tool call of a reply has got: 'running' until its result
+ * arrives, then 'done' or 'error' by what the tool returned; 'stopped' when
+ * the reply ended (Stop, or a failure) before the result came.
+ */
+export type ChatToolCallStatus = 'running' | 'done' | 'error' | 'stopped';
+
+/** One tool call the assistant made while answering, as its tag shows it. */
+export interface ChatToolCall {
+    /** The backend's numbering within the reply; pairs a result with its call. */
+    callId: number;
+    name: string;
+    arguments: Record<string, unknown>;
+    status: ChatToolCallStatus;
+    /** The result exactly as the model read it; present once status is 'done' or 'error'. */
+    resultText?: string;
+}
+
 /** One rendered chat message. */
 export interface ChatMessage {
     /** Conversation-local sequence number; the React key. */
@@ -33,6 +51,10 @@ export interface ChatMessage {
     status: ChatMessageStatus;
     /** The failure text; present only when status is 'error'. */
     errorMessage?: string;
+    /** The tool calls made for an assistant reply, in the order the model asked for them; empty for a user message. */
+    toolCalls: ChatToolCall[];
+    /** True when the agent's model-call cap forced the reply, which may then be incomplete. */
+    hitModelCallLimit: boolean;
 }
 
 export interface ChatPanelProps {
@@ -47,6 +69,15 @@ export interface ChatMessageListProps {
 
 export interface ChatMessageItemProps {
     message: ChatMessage;
+}
+
+export interface ChatToolCallTagsProps {
+    /** The reply's tool calls, in call order. */
+    toolCalls: ChatToolCall[];
+}
+
+export interface ChatToolCallDetailsProps {
+    toolCall: ChatToolCall;
 }
 
 export interface ChatReplyMarkdownProps {

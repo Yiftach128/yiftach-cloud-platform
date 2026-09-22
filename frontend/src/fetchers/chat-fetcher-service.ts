@@ -1,8 +1,9 @@
 import { ChatFetcherError } from './chat-fetcher-error.ts';
 import type {
-    ChatDeltaStreamEvent,
+    ChatDoneStreamEvent,
     ChatErrorStreamEvent,
     ChatFetcher,
+    ChatReplyEvent,
     ChatTurn,
     ServerSentEvent,
 } from './interfaces.ts';
@@ -35,7 +36,7 @@ export class ChatFetcherService implements ChatFetcher {
         this.baseUrl = baseUrl;
     }
 
-    public async streamReply(turns: ChatTurn[], onDelta: (textDelta: string) => void, signal: AbortSignal): Promise<void> {
+    public async streamReply(turns: ChatTurn[], onEvent: (event: ChatReplyEvent) => void, signal: AbortSignal): Promise<void> {
         let response: Response;
         try {
             response = await fetch(`${this.baseUrl}/chat`, {
@@ -62,14 +63,17 @@ export class ChatFetcherService implements ChatFetcher {
         // The `done` or `error` that ends the stream; kept until the body is read out.
         const endingEvents: ServerSentEvent[] = [];
 
+        /* The SSE event name is the data's `type`, so the data parses as that
+           event. Anything with another name is not ours and is skipped. */
         function handleEvent(event: ServerSentEvent): void {
-            if (event.event === 'delta') {
-                const delta = JSON.parse(event.data) as ChatDeltaStreamEvent;
-                onDelta(delta.text);
-            } else if (event.event === 'done' || event.event === 'error') {
+            if (event.event === 'delta' || event.event === 'tool_call' || event.event === 'tool_result') {
+                onEvent(JSON.parse(event.data) as ChatReplyEvent);
+            } else if (event.event === 'done') {
+                onEvent(JSON.parse(event.data) as ChatDoneStreamEvent);
+                endingEvents.push(event);
+            } else if (event.event === 'error') {
                 endingEvents.push(event);
             }
-            // tool_call and tool_result are not shown yet.
         }
 
         try {
