@@ -615,21 +615,28 @@ classes; JSX files use `.tsx`).
   a chat is a 200 stream ending in `llm_request_failed` with Ollama's
   `model '…' not found`. What two services must agree on — the image tag and the
   model — is written once, as `x-` anchors at the top of the file; `OLLAMA_MODEL` in
-  the `.env` swaps the model for the platform and the pull together. **The main file
-  is CPU-only on purpose**: a GPU reservation makes `up` fail outright on a Docker
-  without the NVIDIA runtime, so it lives in `docker-compose.gpu.yml`, an override
-  merged by service name (`-f docker-compose.yml -f docker-compose.gpu.yml`, or
-  `COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml` in the `.env`). No code
-  path knows the difference — Ollama picks the device (`docker exec ycp-ollama-1
-  ollama ps` says which: `100% GPU`, 3.9 GB of VRAM with the 8192 context). The
-  host side is the NVIDIA Container Toolkit inside the WSL distro (it registers an
-  `nvidia` runtime in `/etc/docker/daemon.json`; the Windows driver covers the
-  rest). Measured on the GTX 1660 Ti: the first chat after a start waits about a
-  minute for the model to load, after that a tool call comes back in 4 s and an
-  answer takes about 20 s — the native Ollama's range. CPU mode is a fallback that
-  is not tuned: measured here at about 2 tokens/s, 5 minutes for a containers
-  answer (first token after 48 s, inside the client's 120 s idle watchdog — a
-  slower CPU or a longer prompt can outlast it, which is accepted).
+  the `.env` swaps the model for the platform and the pull together. **The file is
+  CPU-only as written; the GPU is one `.env` line, `OLLAMA_RUNTIME=nvidia`**: the
+  `ollama` service declares `runtime: ${OLLAMA_RUNTIME:-}` — empty, Compose drops
+  the key and the daemon's default `runc` runs the model on the CPU, so `up` works
+  on any machine; `nvidia` picks the runtime the NVIDIA Container Toolkit
+  registers, which hands the container the GPUs its own `NVIDIA_VISIBLE_DEVICES=all`
+  asks for. The runtime rather than a device reservation
+  (`deploy.resources.reservations.devices`) on purpose: a reservation is a block,
+  Compose interpolates scalars only, so it could not be switched off per machine,
+  and on a Docker without the toolkit it makes `up` fail outright — which is why it
+  once needed an override file of its own (`docker-compose.gpu.yml`, since
+  removed). No code path knows the difference — Ollama picks the device
+  (`docker exec ycp-ollama-1 ollama ps` says which: `100% GPU`, 3.9 GB of VRAM with
+  the 8192 context). The host side is the NVIDIA Container Toolkit inside the WSL
+  distro (it registers the `nvidia` runtime in `/etc/docker/daemon.json`; the
+  Windows driver covers the rest). Measured on the GTX 1660 Ti: the first chat
+  after a start waits about a minute for the model to load, after that a tool call
+  comes back in 4 s and an answer takes about 20 s — the native Ollama's range.
+  CPU mode is a fallback that is not tuned: measured here at about 2 tokens/s,
+  5 minutes for a containers answer (first token after 48 s, inside the client's
+  120 s idle watchdog — a slower CPU or a longer prompt can outlast it, which is
+  accepted).
 - End-to-end build test repo: `https://github.com/Yiftach128/cloudplatform-build-test`
   (a 2-file nginx repo that exists for exactly this).
 - The Docker daemon runs in WSL2 Ubuntu on `tcp://127.0.0.1:2375` (IPv4 bind is

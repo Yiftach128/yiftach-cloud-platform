@@ -156,13 +156,13 @@ Then open **http://localhost:3000**. The first `up` downloads about 6 GB — the
 - **`ollama`** — the assistant's model server (the stock `ollama/ollama` image). No published port: only the platform talks to it, so it never collides with an Ollama installed on the host. Models are kept in a named volume and survive `docker compose down`.
 - **`ollama-model-pull`** — a one-shot helper that downloads the model into that volume and exits. Seeing it as `Exited (0)` is the normal state.
 
-**With an NVIDIA GPU** — as written, the model runs on the CPU, so that `up` works on any machine; that mode is only a fallback — expect minutes per answer on a desktop CPU. To give Ollama the GPU, install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) next to Docker (in WSL: inside the distro — the Windows NVIDIA driver already covers the driver side) and add the override file:
+**With an NVIDIA GPU** — as written, the model runs on the CPU, so that `up` works on any machine; that mode is only a fallback — expect minutes per answer on a desktop CPU. To give Ollama the GPU, install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) next to Docker (in WSL: inside the distro — the Windows NVIDIA driver already covers the driver side) and put one line in a `.env` file next to `docker-compose.yml`:
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+```
+OLLAMA_RUNTIME=nvidia
 ```
 
-To keep typing plain `docker compose ...`, put `COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml` in a `.env` file next to the compose files. The model takes about 4 GB of GPU memory; `docker exec ycp-ollama-1 ollama ps` shows whether it landed on the GPU (`100% GPU`). The first chat after a start waits about a minute while the model loads.
+That runs the model server under the toolkit's `nvidia` container runtime, which hands it the GPU (without the toolkit Docker rejects that runtime as unknown, so install it first). The model takes about 4 GB of GPU memory; `docker exec ycp-ollama-1 ollama ps` shows whether it landed on the GPU (`100% GPU`). The first chat after a start waits about a minute while the model loads.
 
 The platform and the builders reach the daemon through the mounted `/var/run/docker.sock`. Good to know:
 

@@ -9,7 +9,8 @@
 # find each other); each image's own defaults live in its Dockerfile.
 #
 # As written here the assistant's model runs on the CPU, so `up` works on any
-# machine. With an NVIDIA GPU, add docker-compose.gpu.yml (see that file).
+# machine. With an NVIDIA GPU, one line in the .env hands it over:
+# OLLAMA_RUNTIME=nvidia (see the ollama service below).
 
 name: ycp
 
@@ -71,6 +72,17 @@ services:
     # survives `down` and image updates.
     ollama:
         image: *ollama-image
+        # The container runtime for the model server. Empty — the default — means
+        # the daemon's own default (runc): the model runs on the CPU and `up` works
+        # on any machine. OLLAMA_RUNTIME=nvidia in the .env picks the runtime the
+        # NVIDIA Container Toolkit registers next to Docker (in WSL: inside the
+        # distro), which hands the container every GPU on the host — the image's own
+        # NVIDIA_VISIBLE_DEVICES=all asks for them. Without the toolkit that runtime
+        # is unknown and `up` fails, which is why it is opt-in. A runtime rather than
+        # a device reservation (deploy.resources.reservations.devices) on purpose:
+        # Compose interpolates scalars only, so a reservation — a block — could not
+        # be switched off per machine and needed an override file of its own.
+        runtime: ${OLLAMA_RUNTIME:-}
         restart: unless-stopped
         volumes:
             - ollama-models:/root/.ollama
