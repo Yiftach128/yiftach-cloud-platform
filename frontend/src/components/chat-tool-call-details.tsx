@@ -5,7 +5,7 @@ import type { ChatToolCall, ChatToolCallDetailsProps } from './interfaces.ts';
 
 /* The log panes' surface (container-logs-panel.tsx): what a tool returned is
    machine output, and often container logs. Height-capped, since a result can
-   run to thousands of characters inside the 380px card. */
+   run to thousands of characters inside the 380px column. */
 const detailsStyle: CSSProperties = {
     maxHeight: 240,
     overflowY: 'auto',

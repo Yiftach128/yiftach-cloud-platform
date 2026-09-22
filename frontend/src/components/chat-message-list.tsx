@@ -25,8 +25,8 @@ function ChatMessageList(props: ChatMessageListProps): ReactElement {
         }
         renderedCount.current = props.messages.length;
 
-        /* scrollTop moves this list only; it keeps working while the card is
-           hidden, so a reply that finishes unseen is at its end on reopen. */
+        /* scrollTop moves this list only; it keeps working while the column is
+           collapsed, so a reply that finishes unseen is at its end on reopen. */
         if (pinnedToBottom.current && scrollContainer.current !== null) {
             scrollContainer.current.scrollTop = scrollContainer.current.scrollHeight;
         }

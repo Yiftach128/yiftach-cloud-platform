@@ -1,21 +1,26 @@
 import { CloudOutlined, CloudServerOutlined, ClusterOutlined, CodeSandboxOutlined, DashboardOutlined, PlusOutlined } from '@ant-design/icons';
 import { Divider, Layout, Menu } from 'antd';
 import type { MenuProps } from 'antd';
-import type { ReactElement } from 'react';
+import { useState } from 'react';
+import type { CSSProperties, ReactElement } from 'react';
 import { Link, Outlet, useLocation } from 'react-router';
 
-import ChatBubble from './chat-bubble.tsx';
+import { dividerColor, headerRowHeight, siderBorderColor } from './app-layout-constants.ts';
+import ChatDockedColumn from './chat-docked-column.tsx';
+import ChatMascotButton from './chat-mascot-button.tsx';
 import HeaderBreadcrumb from './header-breadcrumb.tsx';
 import type { AppLayoutProps, NavItem } from './interfaces.ts';
 
 /* One step darker than the content background (antd's colorBgLayout, #f5f5f5). */
 const siderBackground: string = '#ececec';
 
-/* Shared by the sider logo and the content-side header strip, so the divider under
-   each renders at the same y-position and reads as one continuous line. */
-const headerRowHeight: number = 56;
+/* Gap between the mascot and the bottom edge of the screen — the content
+   padding, so it lines up with the page's bottom margin. */
+const mascotBottomGap: number = 24;
 
-const dividerColor: string = '#d9d9d9';
+/* Where the menu entries' icons start: antd's inline item margin (4px) plus
+   its level-1 padding (24px). The launcher's left edge sits on the same line. */
+const menuIconLeft: number = 28;
 
 /* Single source of truth for navigation: drives the sider menu, the selected-item
    derivation, and the header breadcrumb roots. Paths double as menu keys. */
@@ -59,14 +64,37 @@ function deriveSelectedMenuKey(pathname: string, items: NavItem[]): string {
 
 function AppLayout(props: AppLayoutProps): ReactElement {
     const location = useLocation();
+    /* Here, not in the chat components: the launcher sits in the sider on the
+       left and the column it toggles on the right, and this is the one place
+       that renders both. */
+    const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+
+    function handleToggleChat(): void {
+        setIsChatOpen(!isChatOpen);
+    }
+
+    function handleCloseChat(): void {
+        setIsChatOpen(false);
+    }
 
     const selectedMenuKey: string = deriveSelectedMenuKey(location.pathname, navItems);
 
+    /* Sticky at viewport height: a long page scrolls under the sider, so the
+       navigation and the mascot pinned to its bottom stay on screen. */
+    const siderStyle: CSSProperties = {
+        position: 'sticky',
+        top: 0,
+        height: '100vh',
+        background: siderBackground,
+        borderRight: `1px solid ${siderBorderColor}`,
+    };
+
     return (
-        <>
-            <Layout style={{ minHeight: '100vh' }}>
-                <Layout.Sider theme="light" style={{ background: siderBackground, borderRight: '1px solid #aaa' }}>
-                    <div className="app-logo" style={{ height: headerRowHeight }}><CloudOutlined /> YCP</div>
+        <Layout style={{ minHeight: '100vh' }}>
+            <Layout.Sider theme="light" style={siderStyle}>
+                {/* A column, so the mascot can be pushed to the bottom. */}
+                <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                    <div className="app-logo" style={{ height: headerRowHeight, flex: 'none' }}><CloudOutlined /> YCP</div>
                     <Divider style={{ margin: '0 0 8px 0', borderColor: dividerColor }} />
                     <Menu
                         className="app-sider-menu"
@@ -75,22 +103,30 @@ function AppLayout(props: AppLayoutProps): ReactElement {
                         items={menuItems}
                         style={{ background: 'transparent', borderInlineEnd: 'none' }}
                     />
-                </Layout.Sider>
-                <Layout>
-                    {/* Header strip matching the sider logo row; the divider below continues
-                        the sider's divider across the rest of the screen. */}
-                    <div style={{ height: headerRowHeight, display: 'flex', alignItems: 'center', padding: '0 24px' }}>
-                        <HeaderBreadcrumb navItems={navItems} />
+                    {/* The assistant's launcher, laid out like a menu entry (mascot plus
+                        caption, left edge on the icons' line) but pinned to the bottom of
+                        the screen with the empty stretch of sider between it and the menu
+                        (chat-mascot-button.tsx says why it has no on/off marker). */}
+                    <div style={{ marginTop: 'auto', paddingLeft: menuIconLeft, paddingBottom: mascotBottomGap, display: 'flex', alignItems: 'center' }}>
+                        <ChatMascotButton onClick={handleToggleChat} />
                     </div>
-                    <Divider style={{ margin: 0, borderColor: dividerColor }} />
-                    <Layout.Content style={{ padding: 24 }}>
-                        <Outlet />
-                    </Layout.Content>
-                </Layout>
+                </div>
+            </Layout.Sider>
+            <Layout>
+                {/* Header strip matching the sider logo row; the divider below continues
+                    the sider's divider across the rest of the screen. */}
+                <div style={{ height: headerRowHeight, display: 'flex', alignItems: 'center', padding: '0 24px' }}>
+                    <HeaderBreadcrumb navItems={navItems} />
+                </div>
+                <Divider style={{ margin: 0, borderColor: dividerColor }} />
+                <Layout.Content style={{ padding: 24 }}>
+                    <Outlet />
+                </Layout.Content>
             </Layout>
-            {/* Outside the Outlet, so the conversation survives route changes. */}
-            <ChatBubble fetcher={props.chatFetcher} />
-        </>
+            {/* Outside the Outlet, so the conversation survives route changes; a third
+                column of the frame, so it pushes the page aside instead of covering it. */}
+            <ChatDockedColumn fetcher={props.chatFetcher} open={isChatOpen} onClose={handleCloseChat} />
+        </Layout>
     );
 }
 

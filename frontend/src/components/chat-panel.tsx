@@ -153,8 +153,8 @@ function settleReply(
 
 /**
  * The conversation itself — messages plus composer — knowing nothing about
- * where it is mounted (chat-bubble.tsx today). It owns the conversation state,
- * and its host hides it instead of unmounting it, so closing the chat loses
+ * where it is mounted (chat-docked-column.tsx today). It owns the conversation state,
+ * and its host collapses it instead of unmounting it, so closing the chat loses
  * neither the history nor a reply still streaming.
  */
 function ChatPanel(props: ChatPanelProps): ReactElement {

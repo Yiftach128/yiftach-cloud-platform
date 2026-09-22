@@ -486,23 +486,52 @@ classes; JSX files use `.tsx`).
   the `build-progress-panel.tsx` style), Uptime (`components/agent-format.ts`'s
   `formatUptime` from the agent's reported `startedAt`; "—" when offline), and
   Last seen. No detail page behind the rows, so none of the row-link machinery.
-- The assistant chat is a floating bubble mounted in `app-layout.tsx` *outside* the
-  `<Outlet />`, so a conversation survives route changes. `components/chat-bubble.tsx`
-  is only the shell — an antd `FloatButton` stripped to the bare 72px mascot
-  (`public/chatbot-badge.svg`, an `<img>` like `preset-icon.tsx`; transparent
-  background, no border or shadow, so antd contributes only the fixed positioning,
-  z-index and keyboard focus ring — with no box to signal a button, the hover/focus
-  grow in `index.css`'s `.app-chat-mascot` is the affordance) plus a
-  `position: fixed` antd `Card` (deliberately not `Popover`/`Modal`/`Drawer`: the card must stay open while the page
-  behind it is used, and closes only through its X or the corner button — nothing
-  listens for outside clicks). Closed means hidden, never unmounted: `opacity: 0` +
-  the `inert` attribute, so the history, a reply still streaming and the scroll
-  position survive. Don't switch that to `visibility` — it is inherited, and antd's
-  inputs/buttons transition `all`, so they trail the card by 0.2s (lingering after a
-  close, and the composer's focus-on-open lands on a still-hidden field).
-  `chat-panel.tsx` owns the conversation (messages + composer) and knows nothing
-  about where it is mounted, so moving it to a docked panel means replacing the shell
-  only. It talks to the `ChatFetcher` interface (`fetchers/interfaces.ts`):
+- The assistant chat is a docked right-hand column of the app frame, mounted in
+  `app-layout.tsx` *outside* the `<Outlet />`, so a conversation survives route
+  changes. It pushes the page aside instead of floating over it: the chat quotes
+  what is on screen (rows, logs, tool results), and the floating corner card it
+  started as covered exactly that (the table's right columns, the overview graph's
+  container column, the logs pane). `components/chat-docked-column.tsx` is only
+  the shell — an antd `Layout.Sider` as the frame's third column
+  (`collapsedWidth={0}`, `trigger={null}`; `transition: none`, like the rest of
+  the app's click feedback), sticky at viewport height like the sider on the
+  left, its header row on `app-layout-constants.ts`'s `headerRowHeight` so the
+  divider under it continues the one line across the screen (the constants have
+  their own file because the layout imports the column, and the column importing
+  the layout back would be a cycle). It opens at 380px and is sized by dragging
+  its left edge — `chat-column-resize-handle.tsx`, a 6px strip over the border
+  line that captures the pointer on press, clamps to 320px and 60% of the
+  viewport, is the ARIA window splitter (a focusable `role="separator"`:
+  Left/Right step 16px, Home/End go to the limits) and resets to 380 on
+  double-click; there is no expand button, the drag is the control. The width is
+  remembered in `localStorage` by `chat-column-width-storage.ts` — the app's one
+  piece of remembered UI state, every access wrapped so blocked storage only
+  costs the default width — and re-clamped on read, since the window may have
+  shrunk. Closed means collapsed to zero width, never unmounted: antd clips a
+  zero-width sider's children, the frame inside keeps the open width so the
+  clipped messages never reflow (the history, a reply still streaming and the
+  list's scroll position survive), and the `inert` attribute takes it out of
+  hit-testing, the tab order and the accessibility tree. Nothing listens for
+  outside clicks: the column closes only through its X or the mascot. The launcher
+  is `chat-mascot-button.tsx`: the bare 72px mascot (`public/chatbot-badge.svg`, an
+  `<img>` like `preset-icon.tsx`) as an antd `Button` stripped of its box inline
+  (transparent background, no border or shadow — inline so antd's hover background
+  loses to it; what remains of antd is the click handling and the keyboard focus
+  ring; with no box to signal a button, the hover/focus grow in `index.css`'s
+  `.app-chat-mascot` is the affordance) with the caption "Assistant" to its right
+  at its feet, laid out like a menu entry — its left edge on the menu icons' line
+  (the robot's drawn edge, not its transparent image box: the drawing sits 11px
+  inside the image, so the image is pulled left by that much, the drawing's right
+  margin is what spaces the caption, and the caption's baseline is raised by the
+  drawing's 6px bottom margin onto its last row) — but pinned to the bottom of the screen inside the
+  left sider, which is why that sider is sticky at viewport height too, with the
+  empty stretch of sider between it and the menu. It has no on/off marker on
+  purpose: the menu's selected bar means "the page you are on", and the open
+  column is the only sign the assistant is on. The open/closed state lives in `app-layout.tsx`,
+  the one place that renders both. `chat-panel.tsx` owns the conversation
+  (messages + composer) and knows nothing about where it is mounted, so a
+  different shell (the floating card it started in) is a one-file swap. It talks
+  to the `ChatFetcher` interface (`fetchers/interfaces.ts`):
   `streamReply(turns, onEvent, signal)` — streaming-shaped from the start; an abort
   resolves (Stop is not an error), failures reject with `ChatFetcherError`.
   `ChatFetcherService` (wired in `App.tsx`) is the real one: `POST /api/v1/chat`
@@ -530,7 +559,7 @@ classes; JSX files use `.tsx`).
   focusable `role="button"`) opens `chat-tool-call-details.tsx` under the row:
   the arguments as JSON and the result text exactly as the model read it, on the
   log panes' dark monospace surface, height-capped and scrolling inside the 380px
-  card — inline rather than a `Popover`, which the fixed card would clip; it
+  column — inline rather than a `Popover`, so it scrolls with the conversation; it
   carries `.app-log-output`, so its text is selectable. The "Thinking…"
   placeholder shows only while the reply has neither text nor a running tag. Of
   `done`, the UI shows one thing: a `model_call_limit` stop reason becomes a small
@@ -546,7 +575,7 @@ classes; JSX files use `.tsx`).
   (`chat-reply-markdown-link.tsx`). The component is memoized on the text, because
   every streamed fragment re-renders the whole message list. The element styling
   is `.app-chat-markdown` in `index.css` (bare elements, not antd — the ReactFlow
-  situation), sized for the 380px card: code blocks wrap like the log panes, and
+  situation), sized for the 380px column: code blocks wrap like the log panes, and
   a table is the one block that may scroll sideways.
 - The dev server proxies `/api` → `http://127.0.0.1:3000` (`vite.config.ts`); the backend
   deliberately has no CORS middleware, so never call the backend origin directly. The

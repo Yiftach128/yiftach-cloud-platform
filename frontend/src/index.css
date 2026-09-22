@@ -27,8 +27,8 @@ textarea,
     user-select: none;
 }
 
-/* The chat launcher is the bare mascot (chat-bubble.tsx) — no box signals a
-   button, so hovering (or keyboard focus) grows it slightly. Here rather than
+/* The chat launcher is the mascot plus its caption (chat-mascot-button.tsx) — no box signals a
+   button, so hovering (or keyboard focus) grows the mascot slightly. Here rather than
    inline because :hover cannot be styled inline. */
 .app-chat-mascot img {
     transition: transform 0.15s ease-in-out;
@@ -42,10 +42,10 @@ textarea,
 /* Assistant replies are rendered markdown (chat-reply-markdown.tsx). The
    renderer emits bare elements — not antd, so the "prefer tokens" rule doesn't
    reach them, and descendants cannot be styled inline. Everything is sized for
-   the 380px chat card: tight block spacing, headings barely above body size
+   the 380px chat column: tight block spacing, headings barely above body size
    (a model's "###" is emphasis here, not a page title), square grey surfaces
    like the rest of the app. anywhere-wrapping stops a long token (an image
-   digest, a URL) from widening the card. */
+   digest, a URL) from widening the column. */
 .app-chat-markdown {
     overflow-wrap: anywhere;
 }
@@ -112,7 +112,7 @@ textarea,
 }
 
 /* Code blocks wrap like the log panes do (quoted log lines are their usual
-   content) rather than scrolling sideways inside a narrow card. */
+   content) rather than scrolling sideways inside a narrow column. */
 .app-chat-markdown pre {
     padding: 8px;
     background: #f5f5f5;
@@ -125,7 +125,7 @@ textarea,
     padding: 0;
 }
 
-/* A table is the one block that may be wider than the card: display block
+/* A table is the one block that may be wider than the column: display block
    makes the element itself the scroll container (a real table box ignores
    overflow), and the rows keep forming a table inside it. Cells go back to
    breaking between words only — with anywhere-wrapping a column could be
@@ -263,4 +263,19 @@ textarea,
 .app-hover-actions-table .app-row-actions-pinned {
     opacity: 1;
     pointer-events: auto;
+}
+
+/* The assistant column's resize handle (chat-column-resize-handle.tsx): a
+   6px strip over the column's left border, invisible at rest like the sash
+   of any docked panel. Hover or keyboard focus tints it so the grab point
+   shows; the tint is also the focus indicator, in place of an outline. Here
+   because :hover cannot be styled inline. */
+.app-chat-resize-handle {
+    transition: background-color 0.15s ease-in-out;
+}
+
+.app-chat-resize-handle:hover,
+.app-chat-resize-handle:focus-visible {
+    background-color: rgba(0, 0, 0, 0.2);
+    outline: none;
 }

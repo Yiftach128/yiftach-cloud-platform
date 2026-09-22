@@ -6,7 +6,7 @@ import ChatToolCallTags from './chat-tool-call-tags.tsx';
 import type { ChatMessage, ChatMessageItemProps, ChatToolCall } from './interfaces.ts';
 
 /* pre-wrap keeps the user's own line breaks; anywhere-wrapping stops a long
-   token (an image digest, a URL) from widening the card. */
+   token (an image digest, a URL) from widening the column. */
 const userMessageStyle: CSSProperties = {
     whiteSpace: 'pre-wrap',
     overflowWrap: 'anywhere',
@@ -18,7 +18,7 @@ const userMessageStyle: CSSProperties = {
 /**
  * One chat message. User messages sit right in a grey block, shown exactly as
  * typed; assistant replies run full-width — which suits long answers in a
- * narrow card — and are rendered as markdown, the format models answer in,
+ * narrow column — and are rendered as markdown, the format models answer in,
  * under the tags of the tool calls made for them. The .app-chat-message
  * class opts the text back into selection (index.css).
  */

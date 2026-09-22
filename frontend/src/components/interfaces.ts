@@ -4,7 +4,7 @@ import type { DockerFetcherService } from '../fetchers/docker-fetcher-service.ts
 import type { BuildJob, ChatFetcher, ChatRole, ContainerState, ImagePreset, PresetEnvVar } from '../fetchers/interfaces.ts';
 
 export interface AppLayoutProps {
-    /** Feeds the chat bubble, which lives in the layout so a conversation survives route changes. */
+    /** Feeds the chat column, which lives in the layout so a conversation survives route changes. */
     chatFetcher: ChatFetcher;
 }
 
@@ -12,8 +12,30 @@ export interface BuildAgentListProps {
     fetcher: DockerFetcherService;
 }
 
-export interface ChatBubbleProps {
+export interface ChatColumnResizeHandleProps {
+    /** The column's current width; a drag is measured from it. */
+    width: number;
+    minWidth: number;
+    maxWidth: number;
+    /** Fires on every pointer move and key press with the clamped new width. */
+    onResize: (width: number) => void;
+    /** Fires when a drag ends or a key press is applied — the moment to remember the width. */
+    onResizeEnd: (width: number) => void;
+    /** Double-click: back to the default width. */
+    onReset: () => void;
+}
+
+export interface ChatDockedColumnProps {
     fetcher: ChatFetcher;
+    /** Whether the column is open; closed is collapsed to zero width, never unmounted. */
+    open: boolean;
+    /** The column's X. */
+    onClose: () => void;
+}
+
+export interface ChatMascotButtonProps {
+    /** Toggles the docked chat column. */
+    onClick: () => void;
 }
 
 /**
@@ -59,7 +81,7 @@ export interface ChatMessage {
 
 export interface ChatPanelProps {
     fetcher: ChatFetcher;
-    /** Whether the chat card is showing — the composer takes focus when it opens. */
+    /** Whether the chat column is open — the composer takes focus when it opens. */
     open: boolean;
 }
 
@@ -92,7 +114,7 @@ export interface ChatReplyMarkdownLinkProps {
 }
 
 export interface ChatComposerProps {
-    /** Whether the chat card is showing — the text field takes focus when it opens. */
+    /** Whether the chat column is open — the text field takes focus when it opens. */
     open: boolean;
     /** True while a reply streams: sending is blocked and the button turns into Stop. */
     replying: boolean;

@@ -10,7 +10,7 @@ import type { ChatToolCall, ChatToolCallStatus, ChatToolCallTagsProps } from './
 /* antd gives a Tag a trailing margin for use in running text; here the row's
    gap spaces them. Monospace, because the label is a tool name and its
    arguments. A Tag never wraps, so a long label is cut with an ellipsis at
-   the row's width instead of widening the card — the full label is the
+   the row's width instead of widening the column — the full label is the
    tag's hover title, and the arguments are one click away. */
 const tagStyle: CSSProperties = {
     marginInlineEnd: 0,
