@@ -518,12 +518,12 @@ classes; JSX files use `.tsx`).
   (transparent background, no border or shadow — inline so antd's hover background
   loses to it; what remains of antd is the click handling and the keyboard focus
   ring; with no box to signal a button, the hover/focus grow in `index.css`'s
-  `.app-chat-mascot` is the affordance) with the caption "Assistant" to its right
-  at its feet, laid out like a menu entry — its left edge on the menu icons' line
-  (the robot's drawn edge, not its transparent image box: the drawing sits 11px
-  inside the image, so the image is pulled left by that much, the drawing's right
-  margin is what spaces the caption, and the caption's baseline is raised by the
-  drawing's 6px bottom margin onto its last row) — but pinned to the bottom of the screen inside the
+  `.app-chat-mascot` is the affordance), with no caption — an antd `Tooltip`
+  "YCP Assistant" to its right on hover, and the same text as the button's
+  `aria-label` (the row-action icon-button pattern), is how it is named. Its
+  left edge sits on the menu icons' line (the robot's drawn edge, not its
+  transparent image box: the drawing sits 11px inside the image, so the image is
+  pulled left by that much), but it is pinned to the bottom of the screen inside the
   left sider, which is why that sider is sticky at viewport height too, with the
   empty stretch of sider between it and the menu. It has no on/off marker on
   purpose: the menu's selected bar means "the page you are on", and the open

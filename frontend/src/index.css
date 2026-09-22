@@ -27,9 +27,9 @@ textarea,
     user-select: none;
 }
 
-/* The chat launcher is the mascot plus its caption (chat-mascot-button.tsx) — no box signals a
-   button, so hovering (or keyboard focus) grows the mascot slightly. Here rather than
-   inline because :hover cannot be styled inline. */
+/* The chat launcher is the bare mascot (chat-mascot-button.tsx) — no box signals a button,
+   so hovering (or keyboard focus) grows the mascot slightly; the tooltip names it. Here
+   rather than inline because :hover cannot be styled inline. */
 .app-chat-mascot img {
     transition: transform 0.15s ease-in-out;
 }

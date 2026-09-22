@@ -103,10 +103,10 @@ function AppLayout(props: AppLayoutProps): ReactElement {
                         items={menuItems}
                         style={{ background: 'transparent', borderInlineEnd: 'none' }}
                     />
-                    {/* The assistant's launcher, laid out like a menu entry (mascot plus
-                        caption, left edge on the icons' line) but pinned to the bottom of
-                        the screen with the empty stretch of sider between it and the menu
-                        (chat-mascot-button.tsx says why it has no on/off marker). */}
+                    {/* The assistant's launcher: the bare mascot with its left edge on the
+                        menu icons' line, pinned to the bottom of the screen with the empty
+                        stretch of sider between it and the menu (chat-mascot-button.tsx
+                        says why it has no caption and no on/off marker). */}
                     <div style={{ marginTop: 'auto', paddingLeft: menuIconLeft, paddingBottom: mascotBottomGap, display: 'flex', alignItems: 'center' }}>
                         <ChatMascotButton onClick={handleToggleChat} />
                     </div>
