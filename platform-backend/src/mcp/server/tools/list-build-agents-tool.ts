@@ -14,7 +14,7 @@ export function registerListBuildAgentsTool(server: McpServer, buildAgents: Buil
                 'Lists the build agents — the builder processes that turn GitHub repositories into '
                 + 'images: status (idle, building or offline), the job being built, start time and '
                 + 'last heartbeat.',
-            annotations: { readOnlyHint: true, openWorldHint: false },
+            annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
         },
         async () => runToolWithErrorMapping(async () => {
             return toJsonToolResult(buildAgents.listAgents());

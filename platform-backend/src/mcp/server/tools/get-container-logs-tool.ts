@@ -33,7 +33,7 @@ export function registerGetContainerLogsTool(server: McpServer, docker: DockerMa
                 tail: z.coerce.number().int().min(1).max(MAX_TAIL_LINES).optional()
                     .describe(`How many of the most recent lines to return (1-${MAX_TAIL_LINES}). Defaults to ${DEFAULT_TAIL_LINES}.`),
             }),
-            annotations: { readOnlyHint: true, openWorldHint: false },
+            annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
         },
         async (args) => runToolWithErrorMapping(async () => {
             let tail: number;

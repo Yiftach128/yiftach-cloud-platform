@@ -6,6 +6,7 @@ import type { CSSProperties, ReactElement } from 'react';
 import { Link, Outlet, useLocation } from 'react-router';
 
 import { dividerColor, headerRowHeight, siderBorderColor } from './app-layout-constants.ts';
+import { readStoredChatColumnOpen, storeChatColumnOpen } from './chat-column-open-storage.ts';
 import ChatDockedColumn from './chat-docked-column.tsx';
 import ChatMascotButton from './chat-mascot-button.tsx';
 import HeaderBreadcrumb from './header-breadcrumb.tsx';
@@ -66,15 +67,22 @@ function AppLayout(props: AppLayoutProps): ReactElement {
     const location = useLocation();
     /* Here, not in the chat components: the launcher sits in the sider on the
        left and the column it toggles on the right, and this is the one place
-       that renders both. */
-    const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+       that renders both. Remembered per tab with a cross-tab fallback
+       (chat-column-open-storage.ts), so a reload does not close the column
+       and a new tab starts as the last one left it. */
+    const [isChatOpen, setIsChatOpen] = useState<boolean>(readStoredChatColumnOpen);
+
+    function setChatOpen(open: boolean): void {
+        setIsChatOpen(open);
+        storeChatColumnOpen(open);
+    }
 
     function handleToggleChat(): void {
-        setIsChatOpen(!isChatOpen);
+        setChatOpen(!isChatOpen);
     }
 
     function handleCloseChat(): void {
-        setIsChatOpen(false);
+        setChatOpen(false);
     }
 
     const selectedMenuKey: string = deriveSelectedMenuKey(location.pathname, navItems);

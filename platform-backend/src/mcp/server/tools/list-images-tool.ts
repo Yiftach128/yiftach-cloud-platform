@@ -16,7 +16,7 @@ export function registerListImagesTool(server: McpServer, images: DockerImageSer
             description:
                 'Lists the images this platform built from GitHub repositories (images pulled from a '
                 + 'registry are not included): id, tags, size, and how many containers use each.',
-            annotations: { readOnlyHint: true, openWorldHint: false },
+            annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
         },
         async () => runToolWithErrorMapping(async () => {
             const managed: ImageSummary[] = await images.getManagedImages();

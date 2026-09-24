@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from 'react';
+import type { ReactElement, ReactNode, Ref } from 'react';
 
 import type { DockerFetcherService } from '../fetchers/docker-fetcher-service.ts';
 import type { BuildJob, ChatFetcher, ChatRole, ContainerState, ImagePreset, PresetEnvVar } from '../fetchers/interfaces.ts';
@@ -79,10 +79,18 @@ export interface ChatMessage {
     hitModelCallLimit: boolean;
 }
 
+/** What the panel's host may ask of the conversation, through the panel's `ref`. */
+export interface ChatPanelHandle {
+    /** Empties the conversation, stopping a reply still streaming; the tab's stored copy goes with it. */
+    deleteConversation: () => void;
+}
+
 export interface ChatPanelProps {
     fetcher: ChatFetcher;
     /** Whether the chat column is open — the composer takes focus when it opens. */
     open: boolean;
+    /** Receives the `ChatPanelHandle`; the column's "Delete conversation" goes through it. */
+    ref?: Ref<ChatPanelHandle>;
 }
 
 export interface ChatMessageListProps {

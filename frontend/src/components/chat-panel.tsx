@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import { ChatFetcherError } from '../fetchers/chat-fetcher-error.ts';
@@ -9,8 +9,16 @@ import type {
     ChatTurn,
 } from '../fetchers/interfaces.ts';
 import ChatComposer from './chat-composer.tsx';
+import { readStoredChatConversation, storeChatConversation } from './chat-conversation-storage.ts';
 import ChatMessageList from './chat-message-list.tsx';
-import type { ChatMessage, ChatMessageStatus, ChatPanelProps, ChatToolCall, ChatToolCallStatus } from './interfaces.ts';
+import type {
+    ChatMessage,
+    ChatMessageStatus,
+    ChatPanelHandle,
+    ChatPanelProps,
+    ChatToolCall,
+    ChatToolCallStatus,
+} from './interfaces.ts';
 
 /* A reply that failed or was stopped before its first fragment carries no
    text — there is nothing of it to send back. Tool calls are not sent back
@@ -19,6 +27,16 @@ function toTurns(messages: ChatMessage[]): ChatTurn[] {
     return messages
         .filter((message: ChatMessage) => message.text !== '')
         .map((message: ChatMessage) => ({ role: message.role, text: message.text }));
+}
+
+/* Ids are the sequence numbers of the list, so the next one follows the last
+   message — which is how a restored conversation continues its numbering. */
+function nextMessageIdAfter(messages: ChatMessage[]): number {
+    const lastMessage: ChatMessage | undefined = messages[messages.length - 1];
+    if (lastMessage === undefined) {
+        return 1;
+    }
+    return lastMessage.id + 1;
 }
 
 function appendReplyText(reply: ChatMessage, textDelta: string): ChatMessage {
@@ -114,8 +132,33 @@ function applyReplyEvent(messages: ChatMessage[], replyId: number, event: ChatRe
     });
 }
 
-/* Ends the reply. A tool call still running has lost its result — the run
+/* Ends one reply. A tool call still running has lost its result — the run
    was stopped or failed — so its tag stops spinning too. */
+function settleMessage(message: ChatMessage, status: ChatMessageStatus, errorMessage: string | undefined): ChatMessage {
+    const toolCalls: ChatToolCall[] = message.toolCalls.map((call: ChatToolCall) => {
+        if (call.status !== 'running') {
+            return call;
+        }
+        const stopped: ChatToolCall = {
+            callId: call.callId,
+            name: call.name,
+            arguments: call.arguments,
+            status: 'stopped',
+        };
+        return stopped;
+    });
+    const settled: ChatMessage = {
+        id: message.id,
+        role: message.role,
+        text: message.text,
+        status: status,
+        errorMessage: errorMessage,
+        toolCalls: toolCalls,
+        hitModelCallLimit: message.hitModelCallLimit,
+    };
+    return settled;
+}
+
 function settleReply(
     messages: ChatMessage[],
     replyId: number,
@@ -126,42 +169,43 @@ function settleReply(
         if (message.id !== replyId) {
             return message;
         }
-        const toolCalls: ChatToolCall[] = message.toolCalls.map((call: ChatToolCall) => {
-            if (call.status !== 'running') {
-                return call;
-            }
-            const stopped: ChatToolCall = {
-                callId: call.callId,
-                name: call.name,
-                arguments: call.arguments,
-                status: 'stopped',
-            };
-            return stopped;
-        });
-        const settled: ChatMessage = {
-            id: message.id,
-            role: message.role,
-            text: message.text,
-            status: status,
-            errorMessage: errorMessage,
-            toolCalls: toolCalls,
-            hitModelCallLimit: message.hitModelCallLimit,
-        };
-        return settled;
+        return settleMessage(message, status, errorMessage);
     });
+}
+
+/* A restored conversation may hold a reply that was still streaming when the
+   page went away. The reload closed the response, and the backend aborted the
+   run on that close, so it is exactly the Stop case: what had arrived stays,
+   the reply and its running tool calls are marked stopped. Nothing can be
+   resumed — the backend keeps no run to reattach to. */
+function settleInterruptedReplies(messages: ChatMessage[]): ChatMessage[] {
+    return messages.map((message: ChatMessage) => {
+        if (message.status !== 'streaming') {
+            return message;
+        }
+        return settleMessage(message, 'stopped', undefined);
+    });
+}
+
+function readInitialMessages(): ChatMessage[] {
+    return settleInterruptedReplies(readStoredChatConversation());
 }
 
 /**
  * The conversation itself — messages plus composer — knowing nothing about
- * where it is mounted (chat-docked-column.tsx today). It owns the conversation state,
- * and its host collapses it instead of unmounting it, so closing the chat loses
- * neither the history nor a reply still streaming.
+ * where it is mounted (chat-docked-column.tsx today). It owns the conversation
+ * state, and its host collapses it instead of unmounting it, so closing the
+ * chat loses neither the history nor a reply still streaming. The conversation
+ * also outlives the page: it is written to the tab's storage on every change
+ * and read back at mount (chat-conversation-storage.ts), so a reload keeps
+ * it. What the host may ask of it is the `ChatPanelHandle` on its `ref`:
+ * deleting the conversation, which stops a reply still streaming and empties
+ * the list.
  */
 function ChatPanel(props: ChatPanelProps): ReactElement {
-    const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [messages, setMessages] = useState<ChatMessage[]>(readInitialMessages);
     const [isReplying, setIsReplying] = useState<boolean>(false);
 
-    const nextMessageId = useRef<number>(1);
     const activeReply = useRef<AbortController | null>(null);
 
     useEffect(() => {
@@ -172,20 +216,46 @@ function ChatPanel(props: ChatPanelProps): ReactElement {
         };
     }, []);
 
+    /* Every change, streamed fragments included, so a reload mid-reply keeps
+       what had arrived. The list stays small — tool results are budgeted by
+       the backend — so serializing it per fragment costs nothing noticeable. */
+    useEffect(() => {
+        storeChatConversation(messages);
+    }, [messages]);
+
+    function handleStop(): void {
+        if (activeReply.current !== null) {
+            activeReply.current.abort();
+        }
+    }
+
+    /* The aborted reply settles against the emptied list, which changes
+       nothing there; sending stays blocked until it has. */
+    function deleteConversation(): void {
+        handleStop();
+        setMessages([]);
+    }
+
+    useImperativeHandle(props.ref, () => {
+        const handle: ChatPanelHandle = { deleteConversation: deleteConversation };
+        return handle;
+    });
+
     async function handleSend(text: string): Promise<void> {
         if (isReplying) {
             return;
         }
 
+        const userMessageId: number = nextMessageIdAfter(messages);
         const userMessage: ChatMessage = {
-            id: nextMessageId.current,
+            id: userMessageId,
             role: 'user',
             text: text,
             status: 'done',
             toolCalls: [],
             hitModelCallLimit: false,
         };
-        const replyId: number = nextMessageId.current + 1;
+        const replyId: number = userMessageId + 1;
         const replyMessage: ChatMessage = {
             id: replyId,
             role: 'assistant',
@@ -194,7 +264,6 @@ function ChatPanel(props: ChatPanelProps): ReactElement {
             toolCalls: [],
             hitModelCallLimit: false,
         };
-        nextMessageId.current = nextMessageId.current + 2;
 
         /* Sending is blocked while a reply streams, so `messages` cannot be
            stale here; the streaming updates below go through the functional
@@ -233,12 +302,6 @@ function ChatPanel(props: ChatPanelProps): ReactElement {
         } finally {
             activeReply.current = null;
             setIsReplying(false);
-        }
-    }
-
-    function handleStop(): void {
-        if (activeReply.current !== null) {
-            activeReply.current.abort();
         }
     }
 

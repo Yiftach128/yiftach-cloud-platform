@@ -4,7 +4,7 @@ import type { ToolChoiceCase } from './interfaces.ts';
  * The cases of the tool-choice check. Kept as plain data — a prompt and what
  * should be called — so an eval harness can load the same list later. The
  * container and image names are the ones `canned-platform-tool-results.ts`
- * serves.
+ * serves; grafana is the one container there that the platform did not create.
  */
 export const TOOL_CHOICE_CASES: ToolChoiceCase[] = [
     {
@@ -14,10 +14,28 @@ export const TOOL_CHOICE_CASES: ToolChoiceCase[] = [
         allowedExtraTools: [],
     },
     {
+        id: 'list-stopped-containers-uses-state-filter',
+        prompt: 'Which containers are stopped?',
+        expectedToolCalls: [{ name: 'list_containers', arguments: { state: 'exited' } }],
+        allowedExtraTools: [],
+    },
+    {
+        id: 'list-every-container-includes-unmanaged',
+        prompt: 'List every container on this machine, including the ones the platform did not create.',
+        expectedToolCalls: [{ name: 'list_containers', arguments: { includeUnmanaged: true } }],
+        allowedExtraTools: [],
+    },
+    {
         id: 'diagnose-crashed-container',
         prompt: 'Why did postgres-db crash?',
         expectedToolCalls: [{ name: 'get_container_logs', arguments: { container: 'postgres-db' } }],
         allowedExtraTools: ['get_container', 'list_containers'],
+    },
+    {
+        id: 'restart-count-needs-container-details',
+        prompt: 'How many times has redis-cache been restarted?',
+        expectedToolCalls: [{ name: 'get_container', arguments: { container: 'redis-cache' } }],
+        allowedExtraTools: ['list_containers'],
     },
     {
         id: 'logs-with-explicit-tail',

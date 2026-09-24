@@ -22,7 +22,7 @@ export function registerGetImageTool(server: McpServer, images: DockerImageServi
             inputSchema: z.object({
                 image: z.string().min(1).describe('Image id or tag, as list_images reports it.'),
             }),
-            annotations: { readOnlyHint: true, openWorldHint: false },
+            annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
         },
         async (args) => runToolWithErrorMapping(async () => {
             const details: ImageDetails = await images.getManagedImageDetails(args.image);

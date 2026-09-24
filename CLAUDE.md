@@ -183,10 +183,23 @@ Server-Sent Events stream.
   `McpHttpEndpoint`) stays in the `server/` root. The v1 tool set is
   read-only (`list_containers`, `get_container`, `get_container_logs`,
   `get_container_stats`, `list_images`, `get_image`, `list_build_agents`), every
-  tool annotated `readOnlyHint`. Results are shaped for a language model's context
-  window, not mirrored from REST: short ids, MiB instead of bytes, stats joined to
-  container names, logs as plain text capped at 200 lines, and `get_container`
-  redacts env *values* (a tool result may land in a hosted model's context).
+  tool annotated `readOnlyHint` + `idempotentHint`. Results are shaped for a
+  language model's context window, not mirrored from REST — the loop gives one
+  model turn 6000 characters of tool results, and the raw shapes blew through it
+  (18 containers listed = 5.5K, one raw inspect = 4.9K): short ids, MiB instead of
+  bytes, ports as `docker ps` strings (`8080->80/tcp`; the daemon's IPv4/IPv6
+  twin collapsed — `toPortSummaries`), stats joined to container names, logs as
+  plain text capped at 200 lines, and `get_container` answers a diagnostic view
+  (`ContainerToolDetails`: state with exit code/OOM/health/restarts, command,
+  ports, env *names* only — values may land in a hosted model's context — labels,
+  restart policy, mounts, networks, and only the resource limits that are set)
+  instead of the raw inspect. **The two container lists show the platform's own
+  containers by default**, like the services table's managed-only switch:
+  `list_containers` (also filterable by `state`, applied in the daemon) and
+  `get_container_stats` take `includeUnmanaged` (default false, decided by
+  `is-platform-managed-container.ts`) and always answer an object with the rows
+  plus `hiddenUnmanagedCount`, so a model never reads a filtered list as "nothing
+  is running"; `get_container` and the logs take any container's name.
   `createPlatformMcpServer` is a factory, not a shared instance, because an MCP
   server binds to one transport; `McpHttpEndpoint` wraps the SDK's
   `createMcpHandler` (per-request, stateless; serves the 2026-07-28 protocol
@@ -287,7 +300,13 @@ Server-Sent Events stream.
   *real* MCP tool catalog, with one substitution — `CannedResultsToolProvider`
   answers every call from `canned-platform-tool-results.ts` — so it needs no Docker
   and scores comparably across runs and models
-  (`OLLAMA_MODEL=… npm run check:tool-choice`); exit 1 on a failed case.
+  (`OLLAMA_MODEL=… npm run check:tool-choice`); exit 1 on a failed case. The
+  canned fixtures are typed against the tools' result interfaces
+  (`src/mcp/server/interfaces.ts`, plus the service types the image and
+  build-agent tools pass through) and serialized by the tools' own
+  `renderValueAsToolResultJson`, so a tool whose shape changes breaks the
+  typecheck instead of leaving the check testing a shape that no longer exists;
+  the canned list and stats apply the managed-only default and the filters too.
   `npm run ask:ai-agent -- "<question>"` asks one question with the tools executed
   for real (Ctrl+C aborts the run). The case list is plain data on purpose: the
   later eval harness loads it rather than replacing it.
@@ -504,15 +523,24 @@ classes; JSX files use `.tsx`).
   viewport, is the ARIA window splitter (a focusable `role="separator"`:
   Left/Right step 16px, Home/End go to the limits) and resets to 380 on
   double-click; there is no expand button, the drag is the control. The width is
-  remembered in `localStorage` by `chat-column-width-storage.ts` — the app's one
-  piece of remembered UI state, every access wrapped so blocked storage only
-  costs the default width — and re-clamped on read, since the window may have
+  remembered by `chat-column-width-storage.ts` in `sessionStorage` with a
+  `localStorage` fallback — the tab's own entry wins for the life of the tab,
+  a new tab starts at the width last dragged anywhere, every write goes to
+  both stores, every access wrapped so blocked storage only costs the default
+  width; that session-then-local policy is written once, in
+  `session-storage-with-local-storage-fallback.ts`, which the open-state
+  store below shares — and re-clamped on read, since the window may have
   shrunk. Closed means collapsed to zero width, never unmounted: antd clips a
   zero-width sider's children, the frame inside keeps the open width so the
   clipped messages never reflow (the history, a reply still streaming and the
   list's scroll position survive), and the `inert` attribute takes it out of
   hit-testing, the tab order and the accessibility tree. Nothing listens for
-  outside clicks: the column closes only through its X or the mascot. The launcher
+  outside clicks: the column closes only through its X or the mascot. The
+  header's other button, "Delete conversation" (a red trash icon — it must
+  read as deletion, not as "new"), empties the chat (stopping a reply still
+  streaming) through the panel's `ChatPanelHandle` — the shell asks over the
+  panel's `ref`, the panel acts, so the panel stays the conversation's owner;
+  it exists because a reload no longer clears the chat. The launcher
   is `chat-mascot-button.tsx`: the bare 72px mascot (`public/chatbot-badge.svg`, an
   `<img>` like `preset-icon.tsx`) as an antd `Button` stripped of its box inline
   (transparent background, no border or shadow — inline so antd's hover background
@@ -528,9 +556,26 @@ classes; JSX files use `.tsx`).
   empty stretch of sider between it and the menu. It has no on/off marker on
   purpose: the menu's selected bar means "the page you are on", and the open
   column is the only sign the assistant is on. The open/closed state lives in `app-layout.tsx`,
-  the one place that renders both. `chat-panel.tsx` owns the conversation
+  the one place that renders both, and is remembered by
+  `chat-column-open-storage.ts` the way the width is (sessionStorage first,
+  localStorage as the fallback), so a reload brings the column back as it was
+  and a new tab starts as the last tab left it. `chat-panel.tsx` owns the conversation
   (messages + composer) and knows nothing about where it is mounted, so a
-  different shell (the floating card it started in) is a one-file swap. It talks
+  different shell (the floating card it started in) is a one-file swap. The
+  conversation survives a reload: `chat-conversation-storage.ts` writes the
+  message list to `sessionStorage` on every change (streamed fragments
+  included) and the panel reads it back at mount. `sessionStorage`, not
+  `localStorage`, on purpose: per tab, so two tabs never overwrite each other's
+  chat, a ctrl+click tab starts empty, and closing the tab is the end of the
+  conversation. The width and the open state are the two things that may
+  outlive a tab: they are preferences, not content, so their `localStorage`
+  copy is all the app leaves durably in the browser. The backend keeps no
+  conversation, so this is the only copy. The key is versioned and every message is checked field by field
+  (a junk entry starts empty, never crashes the first render); a reply that was
+  still streaming at reload restores as `stopped` with its running tags dashed
+  — the reload closed the response and the backend aborted the run on that
+  close, the Stop case, nothing to reattach to. Message ids continue from the
+  last restored message. It talks
   to the `ChatFetcher` interface (`fetchers/interfaces.ts`):
   `streamReply(turns, onEvent, signal)` — streaming-shaped from the start; an abort
   resolves (Stop is not an error), failures reject with `ChatFetcherError`.

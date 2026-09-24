@@ -1,13 +1,13 @@
-import { CloseOutlined } from '@ant-design/icons';
-import { Button, Divider, Layout } from 'antd';
-import { useState } from 'react';
+import { CloseOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Button, Divider, Flex, Layout } from 'antd';
+import { useRef, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
 
 import { dividerColor, headerRowHeight, siderBorderColor } from './app-layout-constants.ts';
 import ChatColumnResizeHandle from './chat-column-resize-handle.tsx';
 import { readStoredChatColumnWidth, storeChatColumnWidth } from './chat-column-width-storage.ts';
 import ChatPanel from './chat-panel.tsx';
-import type { ChatDockedColumnProps } from './interfaces.ts';
+import type { ChatDockedColumnProps, ChatPanelHandle } from './interfaces.ts';
 
 /* The width the column opens at until the user drags it: what the message
    styling is sized for (index.css, .app-chat-markdown). */
@@ -48,17 +48,22 @@ function readInitialColumnWidth(): number {
  * like the navigation on the left: the page reflows to what is left (the
  * tables ellipsize, the services table scrolls sideways under its minimum
  * width, the graph canvas is fluid). Sized by dragging its left edge
- * (chat-column-resize-handle.tsx), and the width is remembered across
- * reloads (chat-column-width-storage.ts). Closed means collapsed to
- * zero width, never unmounted, so the conversation, a reply still streaming
- * and the list's scroll position survive; the frame inside keeps the open
- * width so the clipped content never reflows, and `inert` takes it out of
- * hit-testing, the tab order and the accessibility tree. Nothing here
- * listens for outside clicks: the column closes only through its X or the
- * mascot (chat-mascot-button.tsx).
+ * (chat-column-resize-handle.tsx), and the width is remembered for the life
+ * of the tab (chat-column-width-storage.ts), like the conversation itself.
+ * Closed means collapsed to zero width, never unmounted, so the conversation,
+ * a reply still streaming and the list's scroll position survive; the frame
+ * inside keeps the open width so the clipped content never reflows, and
+ * `inert` takes it out of hit-testing, the tab order and the accessibility
+ * tree. Nothing here listens for outside clicks: the column closes only
+ * through its X or the mascot (chat-mascot-button.tsx). The header's other
+ * button deletes the conversation — needed now that a reload no longer
+ * clears the chat, and drawn as a deletion (trash, red) so nobody takes it
+ * for "new tab" — through the panel's handle, so the panel stays the owner
+ * of the conversation and this file only the shell.
  */
 function ChatDockedColumn(props: ChatDockedColumnProps): ReactElement {
     const [width, setWidth] = useState<number>(readInitialColumnWidth);
+    const panel = useRef<ChatPanelHandle | null>(null);
 
     /* Read per render, not once: the window may have been resized since. */
     const maxWidth: number = computeMaxColumnWidth();
@@ -75,6 +80,12 @@ function ChatDockedColumn(props: ChatDockedColumnProps): ReactElement {
     function handleResetWidth(): void {
         setWidth(DEFAULT_COLUMN_WIDTH_PX);
         storeChatColumnWidth(DEFAULT_COLUMN_WIDTH_PX);
+    }
+
+    function handleDeleteConversation(): void {
+        if (panel.current !== null) {
+            panel.current.deleteConversation();
+        }
     }
 
     /* Sticky at viewport height, like the sider on the left: a long page
@@ -149,18 +160,29 @@ function ChatDockedColumn(props: ChatDockedColumnProps): ReactElement {
                 />
                 <div style={headerRowStyle}>
                     <span>YCP assistant</span>
-                    <Button
-                        type="text"
-                        size="small"
-                        aria-label="Close"
-                        title="Close"
-                        icon={<CloseOutlined />}
-                        onClick={props.onClose}
-                    />
+                    <Flex gap={4}>
+                        <Button
+                            type="text"
+                            size="small"
+                            danger
+                            aria-label="Delete conversation"
+                            title="Delete conversation"
+                            icon={<DeleteOutlined />}
+                            onClick={handleDeleteConversation}
+                        />
+                        <Button
+                            type="text"
+                            size="small"
+                            aria-label="Close"
+                            title="Close"
+                            icon={<CloseOutlined />}
+                            onClick={props.onClose}
+                        />
+                    </Flex>
                 </div>
                 <Divider style={{ margin: 0, borderColor: dividerColor }} />
                 <div style={bodyStyle}>
-                    <ChatPanel fetcher={props.fetcher} open={props.open} />
+                    <ChatPanel ref={panel} fetcher={props.fetcher} open={props.open} />
                 </div>
             </div>
         </Layout.Sider>

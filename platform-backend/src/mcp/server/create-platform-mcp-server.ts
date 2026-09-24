@@ -16,8 +16,10 @@ const SERVER_VERSION = '0.1.0';
 const SERVER_INSTRUCTIONS =
     'Read-only tools for inspecting Yiftach Cloud Platform, a self-hosted Docker control panel: '
     + 'its containers, the images it built from GitHub repositories, and its build agents. '
+    + 'list_containers and get_container_stats show the containers the platform created; other '
+    + 'containers on the machine are only counted (hiddenUnmanagedCount) unless includeUnmanaged is true. '
     + 'Container names come from list_containers; image ids from list_images. '
-    + 'To diagnose a container, combine get_container (state, exit code) with get_container_logs.';
+    + 'To diagnose a container, combine get_container (exit code, health, restarts) with get_container_logs.';
 
 /**
  * Builds a fresh MCP server with every platform tool registered. A factory
