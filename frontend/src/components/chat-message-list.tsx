@@ -49,7 +49,7 @@ function ChatMessageList(props: ChatMessageListProps): ReactElement {
         content = (
             <Flex vertical gap={12}>
                 {props.messages.map((message: ChatMessage) => (
-                    <ChatMessageItem key={message.id} message={message} />
+                    <ChatMessageItem key={message.id} message={message} onDecide={props.onDecide} />
                 ))}
             </Flex>
         );

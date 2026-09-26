@@ -1,7 +1,9 @@
 /**
- * Validates the POST /chat body: `{turns: [{role: 'user' | 'assistant', text}, ...]}`,
- * the whole conversation with the question being asked as its last turn.
- * Throws {@link ValidationError} (→ 400).
+ * Validates the POST /chat body: `{turns: [{role: 'user' | 'assistant', text}, ...],
+ * autoApproveToolCalls?: boolean}` — the whole conversation with the question
+ * being asked as its last turn, and whether its destructive tool calls may run
+ * without asking (absent means no, so a client that does not know the field
+ * keeps the ask). Throws {@link ValidationError} (→ 400).
  *
  * The caps guard against junk, not against long conversations — those are the
  * agent's history window to handle. Only the last turn has a length cap,
@@ -9,13 +11,13 @@
  * too long simply falls outside it.
  */
 
-import type { ChatTurn } from '../ai-agent/interfaces.ts';
+import type { AgentRunRequest, ChatTurn } from '../ai-agent/interfaces.ts';
 import { ValidationError } from './validation-error.ts';
 
 const MAX_TURNS = 100;
 const MAX_LAST_TURN_CHARS = 4_000;
 
-export function parseChatRequest(body: unknown): ChatTurn[] {
+export function parseChatRequest(body: unknown): AgentRunRequest {
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
         throw new ValidationError('Request body must be a JSON object');
     }
@@ -41,7 +43,17 @@ export function parseChatRequest(body: unknown): ChatTurn[] {
     if (lastTurn.text.length > MAX_LAST_TURN_CHARS) {
         throw new ValidationError(`The last turn's "text" must be at most ${MAX_LAST_TURN_CHARS} characters`);
     }
-    return turns;
+
+    const rawAutoApprove = record['autoApproveToolCalls'];
+    let autoApproveToolCalls: boolean;
+    if (rawAutoApprove === undefined) {
+        autoApproveToolCalls = false;
+    } else if (typeof rawAutoApprove === 'boolean') {
+        autoApproveToolCalls = rawAutoApprove;
+    } else {
+        throw new ValidationError('"autoApproveToolCalls" must be a boolean when given');
+    }
+    return { turns: turns, autoApproveToolCalls: autoApproveToolCalls };
 }
 
 function parseTurn(rawTurn: unknown, index: number): ChatTurn {

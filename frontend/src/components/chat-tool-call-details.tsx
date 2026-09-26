@@ -33,8 +33,11 @@ const ERROR_TEXT_COLOR: string = '#ff7875';
 /**
  * What one tool call sent and got back, opened from its tag: the arguments as
  * JSON and the result text exactly as the model read it — trimmed to the
- * agent's budget, so it is also all the model could have quoted. The
- * .app-log-output class opts the text into selection (index.css).
+ * agent's budget, so it is also all the model could have quoted. While the
+ * call waits for approval the result slot says so; the Approve and Deny
+ * buttons are not here but in the row under the tags
+ * (chat-tool-call-approval-row.tsx), so this block never has to open by
+ * itself. The .app-log-output class opts the text into selection (index.css).
  */
 function ChatToolCallDetails(props: ChatToolCallDetailsProps): ReactElement {
     const call: ChatToolCall = props.toolCall;
@@ -42,10 +45,15 @@ function ChatToolCallDetails(props: ChatToolCallDetailsProps): ReactElement {
     let resultText: string;
     if (call.resultText !== undefined) {
         resultText = call.resultText;
+    } else if (call.status === 'awaiting') {
+        resultText = 'Waiting for your approval.';
     } else if (call.status === 'running') {
         resultText = 'Waiting for the result…';
+    } else if (call.status === 'denied') {
+        resultText = 'Denied; the tool did not run.';
     } else {
-        resultText = 'No result: the reply ended before the tool answered.';
+        // Stopped while running or while still waiting for approval — either way the call never finished.
+        resultText = 'No result: the reply ended before the call finished.';
     }
 
     let resultStyle: CSSProperties | undefined;

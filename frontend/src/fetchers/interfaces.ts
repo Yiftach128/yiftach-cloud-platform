@@ -442,6 +442,17 @@ export interface ChatTurn {
     text: string;
 }
 
+/** What one reply is asked for: the conversation so far, and the composer's auto-approve switch. */
+export interface ChatReplyRequest {
+    turns: ChatTurn[];
+    /**
+     * True runs the assistant's destructive tool calls (stop, restart, delete)
+     * without Approve/Deny. Sent with every message — the backend keeps no
+     * mode, the switch is the tab's.
+     */
+    autoApproveToolCalls: boolean;
+}
+
 /** One event of a Server-Sent Events stream, as read off the wire: its name and its undecoded data. */
 export interface ServerSentEvent {
     /** The `event:` field; "message" when the stream gave none (the SSE default). */
@@ -454,9 +465,11 @@ export interface ServerSentEvent {
  * The events of a streamed chat reply (POST /chat) — mirrors
  * platform-backend/src/server-sent-events/interfaces.ts and the AgentEvent
  * types of platform-backend/src/services/ai-agent/interfaces.ts. `delta`,
- * `tool_call` and `tool_result` arrive while the agent works; exactly one
- * `done` or `error` ends the stream. Each event's data carries its `type`,
- * which is also the SSE event name.
+ * `tool_call`, `tool_approval` and `tool_result` arrive while the agent
+ * works; exactly one `done` or `error` ends the stream. Each event's data
+ * carries its `type`, which is also the SSE event name. A `tool_call` that
+ * needs approval holds the reply until the person answers through
+ * `ChatFetcher.answerToolCall` (POST /chat/approvals) or stops it.
  */
 
 /** A fragment of the reply's text, as the model generates it. */
@@ -465,13 +478,28 @@ export interface ChatDeltaStreamEvent {
     text: string;
 }
 
-/** The model asked for a tool; the call is about to run. */
+/** The person's answer to a tool call that waits for approval. */
+export type ChatToolCallDecision = 'approved' | 'denied';
+
+/** The model asked for a tool; the call is about to run — or, when it needs approval, about to wait for it. */
 export interface ChatToolCallStreamEvent {
     type: 'tool_call';
-    /** Numbers the reply's tool calls from 1 in the order the model asked; the call's `tool_result` carries the same id. */
+    /** Numbers the reply's tool calls from 1 in the order the model asked; the call's later events carry the same id. */
     callId: number;
     name: string;
     arguments: Record<string, unknown>;
+    /** True when the call waits for the person's approval; a `tool_approval` then says what was decided. False under auto-approve. */
+    needsApproval: boolean;
+    /** True when the tool may interrupt or destroy something (stop, restart, delete): the calls that wait for approval. */
+    destructive: boolean;
+}
+
+/** The person decided about a call that needed approval. A denied call still gets a `tool_result` (an error). */
+export interface ChatToolApprovalStreamEvent {
+    type: 'tool_approval';
+    callId: number;
+    name: string;
+    decision: ChatToolCallDecision;
 }
 
 /**
@@ -511,6 +539,7 @@ export interface ChatErrorStreamEvent {
 export type ChatStreamEvent =
     | ChatDeltaStreamEvent
     | ChatToolCallStreamEvent
+    | ChatToolApprovalStreamEvent
     | ChatToolResultStreamEvent
     | ChatDoneStreamEvent
     | ChatErrorStreamEvent;
@@ -519,6 +548,7 @@ export type ChatStreamEvent =
 export type ChatReplyEvent =
     | ChatDeltaStreamEvent
     | ChatToolCallStreamEvent
+    | ChatToolApprovalStreamEvent
     | ChatToolResultStreamEvent
     | ChatDoneStreamEvent;
 
@@ -529,12 +559,21 @@ export type ChatReplyEvent =
  */
 export interface ChatFetcher {
     /**
-     * Sends the conversation so far and streams the assistant's reply:
-     * `onEvent` receives each event in order — text fragments, tool calls and
-     * their results, then the `done` that closes the reply — and the promise
-     * resolves once the reply is complete. Aborting `signal` ends the stream
-     * early, without a `done`, and the promise still resolves — callers tell
-     * the two apart by `signal.aborted`. Rejects only with ChatFetcherError.
+     * Sends the conversation so far (and the auto-approve choice) and streams
+     * the assistant's reply:
+     * `onEvent` receives each event in order — text fragments, tool calls,
+     * approvals and results, then the `done` that closes the reply — and the
+     * promise resolves once the reply is complete. Aborting `signal` ends the
+     * stream early, without a `done`, and the promise still resolves — callers
+     * tell the two apart by `signal.aborted`. Rejects only with ChatFetcherError.
      */
-    streamReply(turns: ChatTurn[], onEvent: (event: ChatReplyEvent) => void, signal: AbortSignal): Promise<void>;
+    streamReply(request: ChatReplyRequest, onEvent: (event: ChatReplyEvent) => void, signal: AbortSignal): Promise<void>;
+    /**
+     * Answers the tool call the streaming reply waits on. The decision comes
+     * back on the reply's stream as its `tool_approval` event; this promise
+     * only says the backend took the answer. Rejects with ChatFetcherError
+     * when it did not — no such call waiting (the reply was stopped, or the
+     * call already answered), or the backend unreachable.
+     */
+    answerToolCall(callId: number, decision: ChatToolCallDecision): Promise<void>;
 }

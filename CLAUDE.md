@@ -118,7 +118,8 @@ Server-Sent Events stream.
   Ollama nor Docker, so the server starts with both down.
 - `src/middleware/error-handler.ts` — the only place service errors become HTTP:
   `ValidationError` and malformed JSON → 400, `DockerApiError` → its status,
-  `ImagePullError`/`BuildJobNotFoundError` → 404, `ImageNotManagedError` → 409,
+  `ImagePullError`/`BuildJobNotFoundError` → 404,
+  `ImageNotManagedError`/`ToolCallApprovalNotPendingError` → 409,
   `BuildQueueFullError`/`AiAgentBusyError` → 429, `DockerConnectionError` → 503,
   anything else → 500.
 - `src/server-sent-events/` — what `routes/post-chat.ts` needs to answer with a
@@ -134,13 +135,22 @@ Server-Sent Events stream.
   (`llm_unavailable` / `llm_request_failed` / `internal`; the two model-server
   messages pass through untouched — the provider client already says what to
   check). The wire contract lives in its `interfaces.ts`: the agent's `AgentEvent`s
-  as they are (`delta`, `tool_call`, `tool_result` — the last two paired by
-  `callId`), then exactly one `done`
+  as they are (`delta`, `tool_call`, `tool_approval`, `tool_result` — the last
+  three paired by `callId`), then exactly one `done`
   (`stopReason`, `modelCalls`, `peakPromptTokens`) or `error`; every event's data
-  carries its `type`, which is also the SSE event name. The route's order matters:
+  carries its `type`, which is also the SSE event name. A `tool_call` with
+  `needsApproval` holds the stream until the person answers through the second
+  chat route, `POST /chat/approvals` (`routes/post-chat-approval.ts`:
+  `{callId, decision}` → 204; 409 when no such call waits), and the decision is
+  echoed on the stream as the `tool_approval`. A body sent with
+  `autoApproveToolCalls: true` (the chat's auto-approve switch; absent → false,
+  so curl and older clients keep the ask) has no such wait: its destructive
+  calls run at once, their `tool_call` saying `needsApproval: false` and
+  `destructive: true`, and are recorded as `auto_approved`. The route's order matters:
   validate (400) → `startRun` (429 when busy) → *then* open the stream, so
   everything refusable up front still gets a real status; `res` `close` aborts the
-  run. SSE over a `fetch` POST, not `EventSource` (GET-only).
+  run — a call waiting for approval included. SSE over a `fetch` POST, not
+  `EventSource` (GET-only).
 - `src/middleware/host-check.ts` — answers 403 itself (an HTTP gate, not a service
   error) unless the request's `Host` header names a host in `ALLOWED_HOSTS`
   (comma-separated hostnames, ports ignored; default `localhost,127.0.0.1`) and its
@@ -180,10 +190,33 @@ Server-Sent Events stream.
   `tool-result-builders.ts` wraps a success (`toJsonToolResult`,
   `toTextToolResult`); `tool-result-value-formatters.ts` shapes raw values for a
   model (short ids, MiB, rounding). The server plumbing (`createPlatformMcpServer`,
-  `McpHttpEndpoint`) stays in the `server/` root. The v1 tool set is
-  read-only (`list_containers`, `get_container`, `get_container_logs`,
-  `get_container_stats`, `list_images`, `get_image`, `list_build_agents`), every
-  tool annotated `readOnlyHint` + `idempotentHint`. Results are shaped for a
+  `McpHttpEndpoint`) stays in the `server/` root. The catalog is fifteen tools
+  in **one flat `tools/` folder** — eight readers (`list_containers`,
+  `get_container`, `get_container_logs`, `get_container_stats`, `list_images`,
+  `get_image`, `get_build`, `list_build_agents`) and seven that change something
+  (`start_container`, `stop_container`, `restart_container`,
+  `delete_container`, `create_container`, `delete_image`, `start_build`), each
+  the counterpart of one REST route. Which is which is said by the annotations,
+  not by folders: every reader carries `readOnlyHint` + `idempotentHint`, every
+  writer `readOnlyHint: false` plus an explicit `destructiveHint` (true for
+  stop, restart and the deletes; false for start, create and build), because
+  the agent loop and its approval gate consult exactly those — a `read-tools/`
+  / `write-tools/` split was weighed and declined as a second copy of that
+  fact. The factory registers them in two visible blocks. The writers translate
+  onto the same service methods as their routes and reuse the REST request
+  parsers for `create_container` and `start_build` (zod describes the arguments
+  to the model, the parser enforces the field rules, its `ValidationError`
+  becoming an in-band tool error); `delete_container` never passes force or
+  volumes, so a running container gets the daemon's refusal, which the tool
+  description turns into "tell the user and ask before stopping it";
+  `start_build` answers the queued job and tells the model not to poll
+  `get_build` in the same turn. Start, stop and restart answer one line with the
+  state inspected *after* the action (`render-container-action-result-text.ts`
+  — a container that started and exited at once must not read as running);
+  `create_container` answers the `get_container` view, so that mapping lives in
+  `tool-results-utils/map-container-details-to-tool-view.ts`, shared by both,
+  and the two build tools share `map-build-job-to-tool-view.ts` (`BuildJobToolView`:
+  the job with its progress log cut to the newest 30 lines). Results are shaped for a
   language model's context window, not mirrored from REST — the loop gives one
   model turn 6000 characters of tool results, and the raw shapes blew through it
   (18 containers listed = 5.5K, one raw inspect = 4.9K): short ids, MiB instead of
@@ -254,12 +287,29 @@ Server-Sent Events stream.
   model; tool calls are executed and appended as results; repeat until the model
   answers in plain text. Stateless — a run takes the whole conversation
   (`ChatTurn[]`, the frontend's shape) and keeps nothing. It owns the `ToolProvider`
-  interface and imports only `llm/`. The defensive policy lives here: a model-call
+  and `ToolCallApprover` interfaces and imports only `llm/`. The defensive policy
+  lives here: a model-call
   cap (6) whose last call offers no tools, forcing an answer
   (`stopReason: 'model_call_limit'`); unknown tools, exact repeats of an executed
-  call, and thrown tool errors are fed back in band, never thrown; one model turn
+  call, and thrown tool errors are fed back in band, never thrown; **every
+  destructive call waits for the approver** — the tool's `destructive` flag
+  (from `destructiveHint`, absent → true, the spec's default, read by
+  `mcp/client/`) decides the ask: stop, restart and the deletes wait; start,
+  create and build run at once, since what they add is undone by a stop or a
+  delete, which will be asked (gating every non-read-only call was the first
+  policy, dropped as one question too many for a change that destroys
+  nothing) — consent stays in the host, where MCP puts it (elicitation was
+  weighed and declined: it is a tool asking for missing input, not a host
+  asking for permission) — and a denied call gets an error result without
+  running, is remembered in the run's `RunToolCallLedger`, and is refused in
+  band if asked for again, so the person is asked once; a run whose request
+  says `autoApproveToolCalls` (`AgentRunRequest` — the person's switch, sent
+  with each message, so the mode is the request's and the backend keeps none)
+  skips the ask, runs the call at once and records it `auto_approved`, the
+  event still flagged `destructive`; one model turn
   may carry several calls — an all-read-only batch runs with `Promise.all`, a batch
-  containing any other tool runs serially in the order asked, calls past the
+  containing any other tool runs serially in the order asked (so approvals are
+  asked one at a time), calls past the
   per-turn cap (5) are refused in band, and results always go back in call order,
   one message per call; tool results share a character budget (12000 per run, at
   most half of it per turn, split across the turn's calls —
@@ -269,21 +319,38 @@ Server-Sent Events stream.
   `select-recent-turns-within-budget.ts` gives the model the newest turns that fit —
   the newest always, no gaps, never opening on an assistant turn — because the chat
   UI sends the whole conversation every time and Ollama truncates silently. Progress
-  is reported as `AgentEvent`s (`delta` / `tool_call` / `tool_result` — sent as SSE
-  events by the chat route as they are); a run numbers its tool calls from 1 in
-  the order the model asked, refused ones included, and both events of a call
-  carry that `callId` — a concurrent batch reports its results as they finish,
-  so a watcher pairs them by id, never by name or position; the
-  resolved `AgentRunResult` carries the executed calls and the peak prompt size,
+  is reported as `AgentEvent`s (`delta` / `tool_call` / `tool_approval` /
+  `tool_result` — sent as SSE events by the chat route as they are); a run
+  numbers its tool calls from 1 in the order the model asked, refused ones
+  included, and every event of a call carries that `callId` — a concurrent batch
+  reports its results as they finish, so a watcher pairs them by id, never by
+  name or position. `tool_call` says `needsApproval` only for a call that is
+  now waiting (a repeat or an already-denied call is refused before it could
+  wait, so it says false — a UI must not open Approve/Deny for it); a denied
+  call still gets its `tool_result`, so every call has one. The
+  resolved `AgentRunResult` carries the executed calls (with the result text
+  the model read and the approval outcome) and the peak prompt size,
   which is how context pressure is watched. `build-agent-system-prompt.ts` takes
   `now` as a parameter, fixed per run, so every model call of a run shares one
-  prefix (prompt-cache reuse). `AiAgentChatService` is the chat route's door to the
+  prefix (prompt-cache reuse), and swaps its last rule on the catalog: the
+  read-only refusal rule for a catalog of readers, the "destructive changes run
+  only after the user approves; report only what a result confirms" rule otherwise.
+  `AiAgentChatService` is the chat route's door to the
   loop and runs one conversation at a time: one GPU, so a second run would only
   queue inside Ollama, silent long enough to trip the 120s idle watchdog — it is
   refused instead (`AiAgentBusyError` → 429). `startRun` is deliberately not `async`:
   the refusal is thrown synchronously, before the route has opened its stream, and
-  the slot is freed in a `finally` — answered, failed or aborted. The evals bypass
-  it and construct the orchestrator directly.
+  the slot is freed in a `finally` — answered, failed or aborted. One run at a
+  time is also what lets an approval name its call by `callId` alone:
+  `ToolCallApprovalGate` (`tool-call-approval-gate.ts`) is the chat's
+  `ToolCallApprover` — it parks the one waiting call's promise (the ask itself
+  is the `tool_call` event the loop already sent) until
+  `AiAgentChatService.answerApproval` resolves it from `POST /chat/approvals`
+  (`ToolCallApprovalNotPendingError` → 409 when nothing waits under that id),
+  and the run's abort signal (Stop, the tab closing) resolves it as denied
+  without an event — no timeout on purpose, the person's absence is Stop.
+  The evals bypass the service and construct the orchestrator directly, with
+  their own approvers.
 - `evals/` (beside `src/`, not under it) — terminal entry points that drive the agent
   without HTTP. They stand to `src/` as a `test/` folder would: they import from
   `../src/` and exercise it, nothing in `src/` knows they exist, and they are not
@@ -300,16 +367,32 @@ Server-Sent Events stream.
   *real* MCP tool catalog, with one substitution — `CannedResultsToolProvider`
   answers every call from `canned-platform-tool-results.ts` — so it needs no Docker
   and scores comparably across runs and models
-  (`OLLAMA_MODEL=… npm run check:tool-choice`); exit 1 on a failed case. The
+  (`OLLAMA_MODEL=… npm run check:tool-choice`); exit 1 on a failed case. Case
+  ids as arguments (`npm run check:tool-choice -- stop-container delete-image`)
+  run only those — a failed case alone, or a long run in halves: the full
+  21-case run keeps the GPU busy for about five minutes, and this machine's WSL
+  has frozen under that (see Verification). The
   canned fixtures are typed against the tools' result interfaces
   (`src/mcp/server/interfaces.ts`, plus the service types the image and
   build-agent tools pass through) and serialized by the tools' own
   `renderValueAsToolResultJson`, so a tool whose shape changes breaks the
   typecheck instead of leaving the check testing a shape that no longer exists;
-  the canned list and stats apply the managed-only default and the filters too.
+  the canned list and stats apply the managed-only default and the filters too,
+  and the writers answer as the real ones would against the fixture without
+  changing it (a stop reports the container exited, deleting a running container
+  gets the daemon's refusal in the daemon's words), so every case starts from
+  the same platform. The check approves every call
+  (`auto-approve-tool-call-approver.ts` — nothing executes, the question is the
+  choice); its write cases include the refused-delete case, which expects
+  `delete_container` and fails on any `stop_container` — the model must ask
+  the person first, not stop on its own.
   `npm run ask:ai-agent -- "<question>"` asks one question with the tools executed
-  for real (Ctrl+C aborts the run). The case list is plain data on purpose: the
-  later eval harness loads it rather than replacing it.
+  for real (Ctrl+C aborts the run), each destructive call waiting for a y/n on the terminal
+  (`terminal-tool-call-approver.ts`, readline; Ctrl+C at the question denies it
+  and re-raises SIGINT so the run aborts) — the chat's Approve/Deny in terminal
+  form. A build it starts only sits in the script's own queue, which no builder
+  polls: a real build test goes through the UI. The case list is plain data on
+  purpose: the later eval harness loads it rather than replacing it.
 - `src/services/docker/` — the daemon-facing services. `DockerManagerService` is the
   typed facade for container operations (list/inspect/create/start/stop/logs/delete);
   `DockerImageService` owns image acquisition and lifecycle (exists-check, registry
@@ -366,7 +449,8 @@ Server-Sent Events stream.
   window): at most 100 turns, the last one a `user` turn of at most 4000 characters
   — the one turn the window always keeps, so the one whose size must be bounded.
   Consecutive `user` turns are valid: the UI drops a reply that failed before its
-  first fragment.
+  first fragment. Its result is the agent's `AgentRunRequest`: the turns plus
+  `autoApproveToolCalls`, an optional boolean (absent → false).
 - `src/services/wsl/` — the WSL deployment adapter for the docker service's
   daemon-lifecycle contract. `WslDockerDaemon` implements `DockerDaemonLifecycle`:
   boots the WSL distro on demand and holds it open (operational details under
@@ -536,10 +620,11 @@ classes; JSX files use `.tsx`).
   list's scroll position survive), and the `inert` attribute takes it out of
   hit-testing, the tab order and the accessibility tree. Nothing listens for
   outside clicks: the column closes only through its X or the mascot. The
-  header's other button, "Delete conversation" (a red trash icon — it must
-  read as deletion, not as "new"), empties the chat (stopping a reply still
-  streaming) through the panel's `ChatPanelHandle` — the shell asks over the
-  panel's `ref`, the panel acts, so the panel stays the conversation's owner;
+  header's other button, "New conversation" (a neutral note-with-pen icon, the
+  "compose" glyph — it offers a fresh chat; emptying the current one is the
+  means), empties the chat (stopping a reply still streaming) through the
+  panel's `ChatPanelHandle` — the shell asks over the panel's `ref`, the panel
+  acts, so the panel stays the conversation's owner;
   it exists because a reload no longer clears the chat. The launcher
   is `chat-mascot-button.tsx`: the bare 72px mascot (`public/chatbot-badge.svg`, an
   `<img>` like `preset-icon.tsx`) as an antd `Button` stripped of its box inline
@@ -570,43 +655,84 @@ classes; JSX files use `.tsx`).
   conversation. The width and the open state are the two things that may
   outlive a tab: they are preferences, not content, so their `localStorage`
   copy is all the app leaves durably in the browser. The backend keeps no
-  conversation, so this is the only copy. The key is versioned and every message is checked field by field
+  conversation, so this is the only copy. The key is versioned (`v2` since the
+  tool calls gained `destructive` and the awaiting/denied statuses — a `v1`
+  entry is simply not read) and every message is checked field by field
   (a junk entry starts empty, never crashes the first render); a reply that was
-  still streaming at reload restores as `stopped` with its running tags dashed
+  still streaming at reload restores as `stopped` with its running and waiting
+  tags dashed
   — the reload closed the response and the backend aborted the run on that
   close, the Stop case, nothing to reattach to. Message ids continue from the
-  last restored message. It talks
+  last restored message. Between the messages and the text field, framed by a
+  divider line on each side, `chat-composer.tsx` carries the
+  **auto-approve switch** (an antd `Switch` whose "on" color is the warning
+  token, through a nested `ConfigProvider`, beside a warning-colored label
+  reading "Auto-approve on"): the panel owns it
+  like the conversation and sends it with every message, so a flip while a
+  reply streams applies to the next message and a call already waiting keeps
+  its buttons; `chat-auto-approve-storage.ts` remembers it per tab in
+  `sessionStorage` only — never `localStorage`, a fresh tab must not open with
+  the assistant allowed to delete unasked. A destructive call that ran under
+  it shows as any running call (a marker would need a per-call flag and a
+  `v3` key; left out). It talks
   to the `ChatFetcher` interface (`fetchers/interfaces.ts`):
-  `streamReply(turns, onEvent, signal)` — streaming-shaped from the start; an abort
+  `streamReply(request, onEvent, signal)` — the turns plus the switch
+  (`ChatReplyRequest`), streaming-shaped from the start; an abort
   resolves (Stop is not an error), failures reject with `ChatFetcherError`.
   `ChatFetcherService` (wired in `App.tsx`) is the real one: `POST /api/v1/chat`
-  with the conversation (only the newest 100 turns — the backend's cap), the reply
+  with the conversation (only the newest 100 turns — the backend's cap) and
+  `autoApproveToolCalls`, the reply
   read as Server-Sent Events by `read-server-sent-events-stream.ts` (a
   `getReader()` loop, since `EventSource` is GET-only; line and UTF-8 buffering
   across chunks like the backend's `read-ndjson-stream.ts`). `delta`, `tool_call`,
-  `tool_result` and `done` go to `onEvent` as they are (`ChatReplyEvent`); the
+  `tool_approval`, `tool_result` and `done` go to `onEvent` as they are
+  (`ChatReplyEvent`); the
   stream must end with `done` — an `error` event rejects with its
   message, and so does a body that ends with neither (the backend went away). A
   non-2xx before the stream (400, 429 "busy", 403) rejects with the error handler's
-  `message`. The browser never calls an LLM provider directly. The panel folds
+  `message`. Its second method, `answerToolCall(callId, decision)`, posts the
+  person's Approve/Deny to `/api/v1/chat/approvals`; its promise only says the
+  backend took the answer — what the call becomes next arrives on the reply's
+  stream. The browser never calls an LLM provider directly. The panel folds
   each event into the reply message it belongs to (`applyReplyEvent`): text
   fragments grow `text`, and the tool events grow `toolCalls` — one `ChatToolCall`
   per call, paired to its result by `callId`, never by name or position (a
-  concurrent batch reports results as they finish). The turns sent back stay
+  concurrent batch reports results as they finish). A call arrives `awaiting`
+  when its `tool_call` says `needsApproval`, turns `running` or `denied` on the
+  `tool_approval`, and a denied call keeps `denied` when its error result
+  follows (to the model it is an error, to the person it is their choice). The
+  turns sent back stay
   `{role, text}`: tool calls are not part of the history the model reads.
   **Tool-call tags** (`chat-tool-call-tags.tsx`) draw that list above the reply
   text, in call order: one antd `Tag` per call, labeled with the raw MCP tool name
   plus its primitive arguments (`chat-tool-call-formatters.ts`) — the raw name on
-  purpose, it is where a reader sees which tool the model reached for — a spinner
-  while it runs, a check or a cross once its result is in, and a dash when the
+  purpose, it is where a reader sees which tool the model reached for — a
+  question mark (warning color) while it waits for approval, a spinner
+  while it runs, a check or a cross once its result is in, a stop sign when it
+  was denied, and a dash when the
   reply ended first (settling the reply, on Stop or a failure, settles every
-  still-running call as `stopped`). Clicking a tag (or Enter/Space — it is a
+  still-running *or still-waiting* call as `stopped`). Clicking a tag (or
+  Enter/Space — it is a
   focusable `role="button"`) opens `chat-tool-call-details.tsx` under the row:
   the arguments as JSON and the result text exactly as the model read it, on the
   log panes' dark monospace surface, height-capped and scrolling inside the 380px
   column — inline rather than a `Popover`, so it scrolls with the conversation; it
-  carries `.app-log-output`, so its text is selectable. The "Thinking…"
-  placeholder shows only while the reply has neither text nor a running tag. Of
+  carries `.app-log-output`, so its text is selectable. **Approve and Deny live
+  in a row of their own under the tags** (`chat-tool-call-approval-row.tsx`),
+  shown only while a call waits: "Waiting for your approval" beside two small
+  buttons — Approve is `danger` red and says "(destructive)", since every call
+  that waits is one — which disable on the first click (the row is keyed by
+  the call, so the next ask starts enabled). No tag opens by itself: the
+  buttons first sat in the details block, which the waiting call then had to
+  open on its own, and the user wanted the details closed until clicked, so
+  the ask moved out; the details' result slot reads "Waiting for your
+  approval." meanwhile. The decision goes up through `onDecide` (list →
+  item → tags → row, plain props) to the panel, which posts it, and the tag
+  changes only when the stream says so. A refused answer (409: the reply was
+  stopped, or the call already answered) is only logged — the stream, or the
+  Stop, has settled the tag already. The "Thinking…"
+  placeholder shows only while the reply has neither text nor a running or
+  waiting tag. Of
   `done`, the UI shows one thing: a `model_call_limit` stop reason becomes a small
   note under the reply; the call and token counts stay off the UI (they are for
   the evals and the logs). Assistant replies are rendered as markdown
@@ -643,9 +769,17 @@ classes; JSX files use `.tsx`).
   or `frontend/`); `npm run build` from `frontend/` also verifies the bundle. In
   `platform-backend/` it covers two projects: `src/` and `evals/`.
 - AI agent: `npm run check:tool-choice` from `platform-backend/` (needs Ollama up and
-  the `OLLAMA_MODEL` pulled — no Docker; about 80s on a 4B model) after any change to
-  the agent loop, the system prompt, a tool's name/description/schema, or the model;
-  `npm run ask:ai-agent -- "<question>"` for a live run against the real daemon.
+  the `OLLAMA_MODEL` pulled — no Docker; about 7 minutes for the 21 cases on a
+  4B model) after any change to
+  the agent loop, the system prompt, a tool's name/description/schema, or the model.
+  On this machine the WSL distro has frozen three times about five minutes into
+  continuous inference (Ollama silent, then both 11434 and 2375 time out while
+  `wsl -l` still says Running; only `wsl --shutdown` recovers it) — run the
+  check in halves by case id until the cause (GPU thermal/driver or WSL) is
+  found, and stop the compose `ollama` first so one model owns the GPU;
+  `npm run ask:ai-agent -- "<question>"` for a live run against the real daemon
+  (a destructive call waits for `y`/`N` on the terminal; `echo y | npm run ask:ai-agent -- …`
+  scripts the answer).
   For `npm run dev` and the evals, Ollama runs natively in the WSL distro (systemd
   service, `127.0.0.1:11434` — compose brings its own, see Run containerized), so it
   is up only while the distro is — and nothing boots the distro for a chat (only a
@@ -655,7 +789,14 @@ classes; JSX files use `.tsx`).
   application/json" -d '{"turns":[{"role":"user","text":"which containers are
   running?"}]}'` prints the event stream as it arrives (`-N` turns curl's own
   buffering off). A second request while one runs must get 429; killing the first
-  curl must free the slot within a moment (the disconnect aborts the run).
+  curl must free the slot within a moment (the disconnect aborts the run). Asking
+  for a change ("stop container X") holds the stream at a `tool_call` with
+  `needsApproval`; `curl -X POST http://127.0.0.1:3000/api/v1/chat/approvals -H
+  "Content-Type: application/json" -d '{"callId":1,"decision":"approved"}'` (204)
+  lets it go on — a `tool_approval` then the `tool_result` follow on the stream;
+  the same call answered twice, or a wrong `callId`, gets 409. The same body with
+  `"autoApproveToolCalls":true` runs the stop at once (`needsApproval: false`,
+  no `tool_approval`).
 - Run locally: `npm run dev` in `platform-backend/` (port 3000) and in
   `builder-service-backend/` (no port — it polls the platform), `npm run dev` in
   `frontend/`. Builds need both backend processes up.

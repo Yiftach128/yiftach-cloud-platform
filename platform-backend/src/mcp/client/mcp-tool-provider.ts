@@ -73,11 +73,22 @@ function toAgentTool(tool: Tool): AgentTool {
     } else {
         readOnly = tool.annotations.readOnlyHint === true;
     }
+    // The spec's defaults: a read-only tool destroys nothing, and a tool that
+    // says nothing may — the cautious reading again.
+    let destructive: boolean;
+    if (readOnly) {
+        destructive = false;
+    } else if (tool.annotations === undefined || tool.annotations.destructiveHint === undefined) {
+        destructive = true;
+    } else {
+        destructive = tool.annotations.destructiveHint;
+    }
     return {
         name: tool.name,
         description: description,
         inputSchema: tool.inputSchema as Record<string, unknown>,
         readOnly: readOnly,
+        destructive: destructive,
     };
 }
 

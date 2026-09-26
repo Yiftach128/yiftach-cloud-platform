@@ -5,7 +5,9 @@
  * Unlike the tool-choice check this runs the tools for real, against the Docker
  * daemon at DOCKER_HOST — the whole chain the chat endpoint uses, minus
  * HTTP. It never boots the daemon: with Docker down, the tools report that in
- * band and the model says so.
+ * band and the model says so. A destructive tool call waits for a y/n on the
+ * terminal, the way the chat waits for Approve/Deny; a call that only adds
+ * runs at once.
  */
 
 import { config } from '../src/config/config.ts';
@@ -14,6 +16,7 @@ import { ToolCallingChatOrchestrator } from '../src/services/ai-agent/tool-calli
 import { OllamaLlmClient } from '../src/services/llm/ollama/ollama-llm-client.ts';
 import { connectPlatformToolProviderForEvals } from './connect-platform-tool-provider-for-evals.ts';
 import { printAgentEventToTerminal } from './print-agent-event-to-terminal.ts';
+import { TerminalToolCallApprover } from './terminal-tool-call-approver.ts';
 
 async function main(): Promise<void> {
     const question: string = process.argv.slice(2).join(' ').trim();
@@ -29,7 +32,11 @@ async function main(): Promise<void> {
         contextTokens: config.OLLAMA_NUM_CTX,
     });
     const platformTools = await connectPlatformToolProviderForEvals(config.DOCKER_HOST);
-    const orchestrator = new ToolCallingChatOrchestrator({ llm: llm, tools: platformTools });
+    const orchestrator = new ToolCallingChatOrchestrator({
+        llm: llm,
+        tools: platformTools,
+        approver: new TerminalToolCallApprover(),
+    });
 
     // Ctrl+C is the Stop button: the first one aborts the run, which then ends normally.
     const stop: AbortController = new AbortController();
@@ -38,7 +45,7 @@ async function main(): Promise<void> {
     console.log('');
     const startedAt: number = Date.now();
     const result: AgentRunResult = await orchestrator.run(
-        [{ role: 'user', text: question }],
+        { turns: [{ role: 'user', text: question }], autoApproveToolCalls: false },
         printAgentEventToTerminal,
         stop.signal,
     );

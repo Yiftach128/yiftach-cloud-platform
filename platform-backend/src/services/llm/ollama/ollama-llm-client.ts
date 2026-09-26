@@ -25,8 +25,12 @@ import { readNdjsonStream } from './read-ndjson-stream.ts';
  */
 const STREAM_IDLE_TIMEOUT_MS = 120_000;
 
+// Names the `ollama ps` of each deployment: under compose the platform talks to the
+// `ollama` service, not to an Ollama installed in the WSL distro, whose `ollama ps`
+// says nothing about it.
 const UNREACHABLE_HINT =
-    'Check that Ollama is running (`ollama ps` inside the WSL distro) and that OLLAMA_URL points at it.';
+    'Check that Ollama is running where OLLAMA_URL points (under compose: `docker compose exec ollama ollama ps`; ' +
+    'for `npm run dev`: `ollama ps` inside the WSL distro).';
 
 export class OllamaLlmClient implements LlmClient {
     /** Endpoint this instance talks to. For logging and errors. */

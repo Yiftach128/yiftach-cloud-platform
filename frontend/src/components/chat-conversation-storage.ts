@@ -10,10 +10,12 @@ import type { ChatMessage, ChatMessageStatus, ChatToolCall, ChatToolCallStatus }
    back is checked field by field: the key is versioned, but a hand-edited or
    half-written entry must never crash the first render. */
 
-const STORAGE_KEY: string = 'ycp.assistantConversation.v1';
+/* v2: tool calls gained `destructive` and the awaiting/denied statuses. A v1
+   entry is simply not read — it dies with its tab like any other. */
+const STORAGE_KEY: string = 'ycp.assistantConversation.v2';
 
 const MESSAGE_STATUSES: ChatMessageStatus[] = ['streaming', 'done', 'stopped', 'error'];
-const TOOL_CALL_STATUSES: ChatToolCallStatus[] = ['running', 'done', 'error', 'stopped'];
+const TOOL_CALL_STATUSES: ChatToolCallStatus[] = ['awaiting', 'running', 'done', 'error', 'denied', 'stopped'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -32,6 +34,7 @@ function isStoredToolCall(value: unknown): value is ChatToolCall {
         typeof value.callId === 'number' &&
         typeof value.name === 'string' &&
         isRecord(value.arguments) &&
+        typeof value.destructive === 'boolean' &&
         isStatus &&
         isOptionalString(value.resultText)
     );

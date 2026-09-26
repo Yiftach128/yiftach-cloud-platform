@@ -1,7 +1,15 @@
 import type { ReactElement, ReactNode, Ref } from 'react';
 
 import type { DockerFetcherService } from '../fetchers/docker-fetcher-service.ts';
-import type { BuildJob, ChatFetcher, ChatRole, ContainerState, ImagePreset, PresetEnvVar } from '../fetchers/interfaces.ts';
+import type {
+    BuildJob,
+    ChatFetcher,
+    ChatRole,
+    ChatToolCallDecision,
+    ContainerState,
+    ImagePreset,
+    PresetEnvVar,
+} from '../fetchers/interfaces.ts';
 
 export interface AppLayoutProps {
     /** Feeds the chat column, which lives in the layout so a conversation survives route changes. */
@@ -46,11 +54,16 @@ export interface ChatMascotButtonProps {
 export type ChatMessageStatus = 'streaming' | 'done' | 'stopped' | 'error';
 
 /**
- * How far one tool call of a reply has got: 'running' until its result
- * arrives, then 'done' or 'error' by what the tool returned; 'stopped' when
- * the reply ended (Stop, or a failure) before the result came.
+ * How far one tool call of a reply has got: 'awaiting' while it waits for the
+ * person's approval, 'running' until its result arrives, then 'done' or
+ * 'error' by what the tool returned; 'denied' when the person refused it (it
+ * never ran); 'stopped' when the reply ended (Stop, or a failure) before the
+ * result — or the decision — came.
  */
-export type ChatToolCallStatus = 'running' | 'done' | 'error' | 'stopped';
+export type ChatToolCallStatus = 'awaiting' | 'running' | 'done' | 'error' | 'denied' | 'stopped';
+
+/** What the tags and the details block report when the person decides about a call. */
+export type ChatToolCallDecisionHandler = (callId: number, decision: ChatToolCallDecision) => void;
 
 /** One tool call the assistant made while answering, as its tag shows it. */
 export interface ChatToolCall {
@@ -58,8 +71,10 @@ export interface ChatToolCall {
     callId: number;
     name: string;
     arguments: Record<string, unknown>;
+    /** True when the tool may interrupt or destroy something: the calls that wait for approval. */
+    destructive: boolean;
     status: ChatToolCallStatus;
-    /** The result exactly as the model read it; present once status is 'done' or 'error'. */
+    /** The result exactly as the model read it; present once status is 'done', 'error' or 'denied'. */
     resultText?: string;
 }
 
@@ -89,21 +104,33 @@ export interface ChatPanelProps {
     fetcher: ChatFetcher;
     /** Whether the chat column is open — the composer takes focus when it opens. */
     open: boolean;
-    /** Receives the `ChatPanelHandle`; the column's "Delete conversation" goes through it. */
+    /** Receives the `ChatPanelHandle`; the column's "New conversation" goes through it. */
     ref?: Ref<ChatPanelHandle>;
 }
 
 export interface ChatMessageListProps {
     messages: ChatMessage[];
+    /** Passed down to the tool-call approval row, where Approve and Deny live. */
+    onDecide: ChatToolCallDecisionHandler;
 }
 
 export interface ChatMessageItemProps {
     message: ChatMessage;
+    onDecide: ChatToolCallDecisionHandler;
 }
 
 export interface ChatToolCallTagsProps {
     /** The reply's tool calls, in call order. */
     toolCalls: ChatToolCall[];
+    onDecide: ChatToolCallDecisionHandler;
+}
+
+/** The ask under the tag row: shown by the tags while one call waits, keyed by that call. */
+export interface ChatToolCallApprovalRowProps {
+    /** The one call waiting for the person's answer. */
+    toolCall: ChatToolCall;
+    /** Fires once, when Approve or Deny is clicked. */
+    onDecide: ChatToolCallDecisionHandler;
 }
 
 export interface ChatToolCallDetailsProps {
@@ -129,6 +156,9 @@ export interface ChatComposerProps {
     /** Receives the trimmed, non-empty draft. */
     onSend: (text: string) => void;
     onStop: () => void;
+    /** The auto-approve switch: on, every message is sent with `autoApproveToolCalls`, so stop, restart and delete run without asking. */
+    autoApproveToolCalls: boolean;
+    onAutoApproveToolCallsChange: (autoApprove: boolean) => void;
 }
 
 export interface ContainerListProps {

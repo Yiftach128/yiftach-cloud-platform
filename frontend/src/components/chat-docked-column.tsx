@@ -1,4 +1,4 @@
-import { CloseOutlined, DeleteOutlined } from '@ant-design/icons';
+import { CloseOutlined, FormOutlined } from '@ant-design/icons';
 import { Button, Divider, Flex, Layout } from 'antd';
 import { useRef, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
@@ -56,10 +56,11 @@ function readInitialColumnWidth(): number {
  * `inert` takes it out of hit-testing, the tab order and the accessibility
  * tree. Nothing here listens for outside clicks: the column closes only
  * through its X or the mascot (chat-mascot-button.tsx). The header's other
- * button deletes the conversation — needed now that a reload no longer
- * clears the chat, and drawn as a deletion (trash, red) so nobody takes it
- * for "new tab" — through the panel's handle, so the panel stays the owner
- * of the conversation and this file only the shell.
+ * button starts a new conversation — needed now that a reload no longer
+ * clears the chat — by emptying the current one through the panel's handle
+ * (a note-with-pen icon, neutral: what it offers is a fresh chat, the
+ * deletion is the means), so the panel stays the owner of the conversation
+ * and this file only the shell.
  */
 function ChatDockedColumn(props: ChatDockedColumnProps): ReactElement {
     const [width, setWidth] = useState<number>(readInitialColumnWidth);
@@ -164,10 +165,9 @@ function ChatDockedColumn(props: ChatDockedColumnProps): ReactElement {
                         <Button
                             type="text"
                             size="small"
-                            danger
-                            aria-label="Delete conversation"
-                            title="Delete conversation"
-                            icon={<DeleteOutlined />}
+                            aria-label="New conversation"
+                            title="New conversation"
+                            icon={<FormOutlined />}
                             onClick={handleDeleteConversation}
                         />
                         <Button

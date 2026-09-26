@@ -35,16 +35,18 @@ function ChatMessageItem(props: ChatMessageItemProps): ReactElement {
 
     let toolCallTags: ReactElement | null = null;
     if (message.toolCalls.length > 0) {
-        toolCallTags = <ChatToolCallTags toolCalls={message.toolCalls} />;
+        toolCallTags = <ChatToolCallTags toolCalls={message.toolCalls} onDecide={props.onDecide} />;
     }
 
-    const waitingOnTool: boolean = message.toolCalls.some((call: ChatToolCall) => call.status === 'running');
+    const waitingOnTool: boolean = message.toolCalls.some(
+        (call: ChatToolCall) => call.status === 'running' || call.status === 'awaiting',
+    );
     let replyText: ReactElement | null = null;
     if (message.text !== '') {
         replyText = <ChatReplyMarkdown text={message.text} />;
     } else if (message.status === 'streaming' && !waitingOnTool) {
         /* Nothing has arrived yet, or the tool results are in and the answer is
-           being written. A running tag is its own sign of progress. */
+           being written. A running or waiting tag is its own sign of progress. */
         replyText = <Typography.Text type="secondary">Thinking…</Typography.Text>;
     }
 

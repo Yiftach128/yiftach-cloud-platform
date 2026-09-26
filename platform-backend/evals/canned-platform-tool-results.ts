@@ -1,4 +1,5 @@
 import type {
+    BuildJobToolView,
     ContainerListToolResult,
     ContainerStatsToolResult,
     ContainerStatsToolRow,
@@ -14,9 +15,9 @@ import type { ImageDetails } from '../src/services/docker/interfaces.ts';
 
 /**
  * Fixed tool results describing a small made-up platform — four containers
- * (one of them, grafana, not the platform's), two images, one build agent.
- * The tool-choice check answers every call from here, so it needs no Docker
- * daemon and scores the same on every machine.
+ * (one of them, grafana, not the platform's), two images, two finished build
+ * jobs, one build agent. The tool-choice check answers every call from here,
+ * so it needs no Docker daemon and scores the same on every machine.
  *
  * The fixtures are typed against the tools' own result interfaces and
  * serialized by the tools' own JSON renderer: a change to what a tool returns
@@ -24,8 +25,15 @@ import type { ImageDetails } from '../src/services/docker/interfaces.ts';
  * reaches it by itself — so the check can never quietly test a shape that no
  * longer exists. The list and stats fixtures also apply the tools' managed-only
  * default and filters, so a case that expects a filter gets an answer the
- * model can reconcile with its question.
+ * model can reconcile with its question. The tools that change something
+ * answer the way the real ones would against this fixture — a stop reports
+ * the container exited, a delete of a running container is refused with the
+ * daemon's words — without changing the fixture: every case starts from the
+ * same platform.
  */
+
+/** The job id start_build hands out; get_build then finds it running. */
+const QUEUED_BUILD_JOB_ID = '4b8e1c2d-7f3a-4e9b-9c1d-2a3b4c5d6e7f';
 
 const CONTAINERS: ContainerToolSummary[] = [
     { id: '3f2a9c1b7d10', name: 'nginx-web', image: 'cloudplatform/build-yiftach128-site:1a2b3c4', state: 'running', status: 'Up 3 hours', ports: ['8080->80/tcp'], managed: true },
@@ -179,6 +187,58 @@ const BUILD_AGENTS: BuildAgent[] = [
     { name: 'builder-1', status: 'idle', startedAt: new Date('2026-09-21T06:12:40.000Z'), lastSeenAt: new Date('2026-09-21T09:30:02.000Z') },
 ];
 
+const BUILD_JOBS: BuildJobToolView[] = [
+    {
+        id: '6f1c2a3e-9b8d-4c7e-a5f4-3d2e1c0b9a87',
+        status: 'succeeded',
+        gitUrl: 'https://github.com/yiftach128/site',
+        imageTag: 'cloudplatform/build-yiftach128-site:1a2b3c4',
+        containerName: 'nginx-web',
+        createdAt: new Date('2026-09-20T13:58:02.000Z'),
+        finishedAt: new Date('2026-09-20T14:02:30.000Z'),
+        recentLogLines: [
+            'Cloning https://github.com/yiftach128/site.git (depth 1)',
+            'Checked out 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b',
+            '#1 [internal] load build definition from Dockerfile',
+            '#5 [2/2] COPY . /usr/share/nginx/html',
+            '#6 exporting to image',
+            '#6 naming to docker.io/cloudplatform/build-yiftach128-site:1a2b3c4 done',
+            'Image built; creating container nginx-web',
+            'Container nginx-web created, publishing 8080->80/tcp',
+        ],
+    },
+    {
+        id: 'c3d4e5f6-a7b8-4c9d-8e0f-1a2b3c4d5e6f',
+        status: 'failed',
+        gitUrl: 'https://github.com/yiftach128/api#feature/metrics',
+        imageTag: 'cloudplatform/build-yiftach128-api:c3d4e5f6',
+        containerName: 'api-metrics',
+        createdAt: new Date('2026-09-21T08:40:11.000Z'),
+        finishedAt: new Date('2026-09-21T08:41:05.000Z'),
+        errorMessage: 'The build failed: process "/bin/sh -c npm ci" did not complete successfully: exit code: 1',
+        recentLogLines: [
+            'Cloning https://github.com/yiftach128/api.git (depth 1, branch feature/metrics)',
+            '#7 [4/6] RUN npm ci',
+            '#7 2.113 npm ERR! code ERESOLVE',
+            '#7 2.115 npm ERR! ERESOLVE unable to resolve dependency tree',
+            '#7 ERROR: process "/bin/sh -c npm ci" did not complete successfully: exit code: 1',
+        ],
+    },
+    {
+        id: QUEUED_BUILD_JOB_ID,
+        status: 'running',
+        gitUrl: 'https://github.com/yiftach128/site',
+        imageTag: 'cloudplatform/build-yiftach128-site:4b8e1c2d',
+        containerName: 'site-preview',
+        createdAt: new Date('2026-09-21T09:36:00.000Z'),
+        recentLogLines: [
+            'Cloning https://github.com/yiftach128/site.git (depth 1)',
+            'Checked out 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b',
+            '#1 [internal] load build definition from Dockerfile',
+        ],
+    },
+];
+
 const LOGS: Record<string, string[]> = {
     'nginx-web': [
         '2026-09-21T09:28:01Z [stdout] 172.18.0.1 - - "GET / HTTP/1.1" 200 615',
@@ -244,7 +304,170 @@ export function cannedPlatformToolResult(name: string, toolArguments: Record<str
         }
         return toJsonOutcome(image);
     }
+    if (name === 'get_build') {
+        const wanted: string = String(toolArguments.jobId);
+        const job: BuildJobToolView | undefined = BUILD_JOBS.find((candidate: BuildJobToolView) => candidate.id === wanted);
+        if (job === undefined) {
+            return { text: `Not found: No build job "${wanted}" — it may have expired or the server restarted`, isError: true };
+        }
+        return toJsonOutcome(job);
+    }
+    if (name === 'start_container' || name === 'stop_container' || name === 'restart_container') {
+        return cannedContainerAction(name, String(toolArguments.container));
+    }
+    if (name === 'delete_container') {
+        return cannedDeleteContainer(String(toolArguments.container));
+    }
+    if (name === 'create_container') {
+        return cannedCreateContainer(toolArguments);
+    }
+    if (name === 'delete_image') {
+        return cannedDeleteImage(String(toolArguments.image));
+    }
+    if (name === 'start_build') {
+        return cannedStartBuild(toolArguments);
+    }
     return { text: `No canned result for tool "${name}".`, isError: true };
+}
+
+function findContainer(wanted: string): ContainerToolSummary | undefined {
+    return CONTAINERS.find((candidate: ContainerToolSummary) => candidate.name === wanted || candidate.id === wanted);
+}
+
+function containerNotFound(wanted: string): ToolCallOutcome {
+    return { text: `Not found: No such container: ${wanted}`, isError: true };
+}
+
+/** The action tools' one-line result (`render-container-action-result-text.ts`), with the state the action leaves behind. */
+function cannedContainerAction(name: string, wanted: string): ToolCallOutcome {
+    const container: ContainerToolSummary | undefined = findContainer(wanted);
+    if (container === undefined) {
+        return containerNotFound(wanted);
+    }
+    let action: string;
+    let stateNow: string;
+    if (name === 'stop_container') {
+        action = 'stopped';
+        stateNow = 'exited (exit code 0)';
+    } else if (name === 'restart_container') {
+        action = 'restarted';
+        stateNow = 'running';
+    } else {
+        action = 'started';
+        stateNow = 'running';
+    }
+    return { text: `Container "${container.name}" ${action}. State now: ${stateNow}.`, isError: false };
+}
+
+/** The daemon refuses to remove a running container without force — and the tool never sends force. */
+function cannedDeleteContainer(wanted: string): ToolCallOutcome {
+    const container: ContainerToolSummary | undefined = findContainer(wanted);
+    if (container === undefined) {
+        return containerNotFound(wanted);
+    }
+    if (container.state === 'running') {
+        return {
+            text: `The Docker daemon refused the request (HTTP 409): cannot remove container "/${container.name}": `
+                + 'container is running: stop the container before removing or force remove',
+            isError: true,
+        };
+    }
+    return { text: `Container "${wanted}" deleted.`, isError: false };
+}
+
+/** The new container's get_container view, as create_container answers it; a taken name gets the daemon's conflict. */
+function cannedCreateContainer(toolArguments: Record<string, unknown>): ToolCallOutcome {
+    const name: string = String(toolArguments.name);
+    const image: string = String(toolArguments.image);
+    const existing: ContainerToolSummary | undefined = findContainer(name);
+    if (existing !== undefined) {
+        return {
+            text: `The Docker daemon refused the request (HTTP 409): Conflict. The container name "/${name}" is already `
+                + `in use by container "${existing.id}". You have to remove (or rename) that container to be able to reuse that name.`,
+            isError: true,
+        };
+    }
+    const ports: string[] = [];
+    if (Array.isArray(toolArguments.ports)) {
+        for (const entry of toolArguments.ports) {
+            const mapping = entry as Record<string, unknown>;
+            ports.push(`${String(mapping.hostPort)}->${String(mapping.containerPort)}/tcp`);
+        }
+    }
+    let envNames: string[];
+    if (typeof toolArguments.env === 'object' && toolArguments.env !== null) {
+        envNames = Object.keys(toolArguments.env);
+    } else {
+        envNames = [];
+    }
+    const details: ContainerToolDetails = {
+        id: 'e1f2a3b4c5d6',
+        name: name,
+        image: image,
+        imageId: 'd6c5b4a3f2e1',
+        createdAt: new Date('2026-09-21T09:35:00.000Z'),
+        command: 'docker-entrypoint.sh',
+        workingDir: '',
+        user: '',
+        state: { status: 'running', exitCode: 0, oomKilled: false, error: '', restartCount: 0, startedAt: new Date('2026-09-21T09:35:01.000Z') },
+        ports: ports,
+        envNames: envNames,
+        labels: { 'cloudplatform.managed': 'true' },
+        restartPolicy: 'unless-stopped',
+        networkMode: 'bridge',
+        privileged: false,
+        mounts: [],
+        networks: [{ name: 'bridge', ipAddress: '172.17.0.5', aliases: [] }],
+        limits: {},
+    };
+    return toJsonOutcome(details);
+}
+
+/** The daemon refuses to remove an image a container uses — and the tool never sends force. */
+function cannedDeleteImage(wanted: string): ToolCallOutcome {
+    const image: ImageToolSummary | undefined = IMAGES.find(
+        (candidate: ImageToolSummary) => candidate.id === wanted || candidate.tags.includes(wanted),
+    );
+    if (image === undefined) {
+        return { text: `Not found: No such image: ${wanted}`, isError: true };
+    }
+    const user: ContainerToolSummary | undefined = CONTAINERS.find(
+        (candidate: ContainerToolSummary) => image.tags.includes(candidate.image),
+    );
+    if (user !== undefined) {
+        return {
+            text: `The Docker daemon refused the request (HTTP 409): conflict: unable to remove repository reference `
+                + `"${wanted}" (must force) - container ${user.id} is using its referenced image ${image.id}`,
+            isError: true,
+        };
+    }
+    return { text: `Image "${wanted}" deleted.`, isError: false };
+}
+
+/** The queued job as start_build answers it, with the tag the queue would mint from the URL. */
+function cannedStartBuild(toolArguments: Record<string, unknown>): ToolCallOutcome {
+    const gitUrl: string = String(toolArguments.gitUrl);
+    const containerName: string = String(toolArguments.name);
+    let imageTag: string;
+    if (typeof toolArguments.imageName === 'string' && toolArguments.imageName.trim() !== '') {
+        imageTag = toolArguments.imageName.trim();
+    } else {
+        // "https://github.com/owner/repo#ref" → "cloudplatform/build-owner-repo:<short job id>", as the queue mints it.
+        const repositoryPath: string = gitUrl.replace(/^https?:\/\/(www\.)?github\.com\//i, '').split('#')[0]!;
+        const segments: string[] = repositoryPath.replace(/\.git$/, '').toLowerCase().split('/');
+        const shortJobId: string = QUEUED_BUILD_JOB_ID.replaceAll('-', '').slice(0, 8);
+        imageTag = `cloudplatform/build-${segments.join('-')}:${shortJobId}`;
+    }
+    const job: BuildJobToolView = {
+        id: QUEUED_BUILD_JOB_ID,
+        status: 'queued',
+        gitUrl: gitUrl,
+        imageTag: imageTag,
+        containerName: containerName,
+        createdAt: new Date('2026-09-21T09:36:00.000Z'),
+        recentLogLines: [],
+    };
+    return toJsonOutcome(job);
 }
 
 /** The list tool's own rules over the fixture: the optional state filter, then the managed-only default. */

@@ -4,7 +4,8 @@ import type {
     ChatErrorStreamEvent,
     ChatFetcher,
     ChatReplyEvent,
-    ChatTurn,
+    ChatReplyRequest,
+    ChatToolCallDecision,
     ServerSentEvent,
 } from './interfaces.ts';
 import { readServerSentEventsStream } from './read-server-sent-events-stream.ts';
@@ -36,13 +37,20 @@ export class ChatFetcherService implements ChatFetcher {
         this.baseUrl = baseUrl;
     }
 
-    public async streamReply(turns: ChatTurn[], onEvent: (event: ChatReplyEvent) => void, signal: AbortSignal): Promise<void> {
+    public async streamReply(
+        request: ChatReplyRequest,
+        onEvent: (event: ChatReplyEvent) => void,
+        signal: AbortSignal,
+    ): Promise<void> {
         let response: Response;
         try {
             response = await fetch(`${this.baseUrl}/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ turns: turns.slice(-MAX_TURNS_SENT) }),
+                body: JSON.stringify({
+                    turns: request.turns.slice(-MAX_TURNS_SENT),
+                    autoApproveToolCalls: request.autoApproveToolCalls,
+                }),
                 signal: signal,
             });
         } catch {
@@ -66,7 +74,12 @@ export class ChatFetcherService implements ChatFetcher {
         /* The SSE event name is the data's `type`, so the data parses as that
            event. Anything with another name is not ours and is skipped. */
         function handleEvent(event: ServerSentEvent): void {
-            if (event.event === 'delta' || event.event === 'tool_call' || event.event === 'tool_result') {
+            if (
+                event.event === 'delta'
+                || event.event === 'tool_call'
+                || event.event === 'tool_approval'
+                || event.event === 'tool_result'
+            ) {
                 onEvent(JSON.parse(event.data) as ChatReplyEvent);
             } else if (event.event === 'done') {
                 onEvent(JSON.parse(event.data) as ChatDoneStreamEvent);
@@ -93,6 +106,22 @@ export class ChatFetcherService implements ChatFetcher {
         if (endingEvent.event === 'error') {
             const failure = JSON.parse(endingEvent.data) as ChatErrorStreamEvent;
             throw new ChatFetcherError(failure.message);
+        }
+    }
+
+    public async answerToolCall(callId: number, decision: ChatToolCallDecision): Promise<void> {
+        let response: Response;
+        try {
+            response = await fetch(`${this.baseUrl}/chat/approvals`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ callId: callId, decision: decision }),
+            });
+        } catch {
+            throw new ChatFetcherError('Backend is unreachable');
+        }
+        if (!response.ok) {
+            throw new ChatFetcherError(await this.readErrorMessage(response));
         }
     }
 

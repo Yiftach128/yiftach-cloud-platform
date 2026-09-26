@@ -13,10 +13,19 @@ const RULES: string[] = [
     'Reply in the language the user writes in.',
 ];
 
+/** For a catalog with nothing but readers — an external MCP server may offer one; the platform's own no longer is. */
 const READ_ONLY_RULE =
     'You, the assistant, can only read: you cannot start, stop, restart, create or delete anything. The control '
     + 'panel itself can — when asked for such an action, say that you cannot do it and name the page that can: '
     + '"My Services" for containers (start, stop, restart, delete), "New Service" to create one, "My Images" for images.';
+
+const CHANGING_TOOLS_RULE =
+    'Tools that change something (start, stop, restart, create or delete a container, delete an image, start a '
+    + 'build) are called when the user asks for the change and never on your own initiative. Those that stop, '
+    + 'restart or delete run only after the user approves the call in the chat; those that only add (start, '
+    + 'create, build) run at once. You cannot change anything without a tool call: never say that '
+    + 'something was started, stopped, restarted, created or deleted unless a tool call in this reply returned '
+    + 'success. A denied or failed call changed nothing, so say so and ask how to proceed.';
 
 /**
  * Builds the system message of one run. `now` is passed in (and fixed for the
@@ -30,6 +39,8 @@ export function buildAgentSystemPrompt(toolUsageInstructions: string, allToolsRe
     }
     if (allToolsReadOnly) {
         lines.push(`- ${READ_ONLY_RULE}`);
+    } else {
+        lines.push(`- ${CHANGING_TOOLS_RULE}`);
     }
     if (toolUsageInstructions !== '') {
         lines.push('', `About the tools: ${toolUsageInstructions}`);

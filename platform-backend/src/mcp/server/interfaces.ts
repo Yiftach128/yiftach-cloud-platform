@@ -7,6 +7,8 @@
  */
 
 import type { BuildAgentRegistry } from '../../services/build-agents/build-agent-registry.ts';
+import type { BuildQueueService } from '../../services/builds/build-queue-service.ts';
+import type { BuildJobStatus } from '../../services/builds/interfaces.ts';
 import type { DockerImageService } from '../../services/docker/docker-image-service.ts';
 import type { DockerManagerService } from '../../services/docker/docker-manager-service.ts';
 import type { ContainerHealthStatus, ContainerState } from '../../services/docker/interfaces.ts';
@@ -15,7 +17,31 @@ import type { ContainerHealthStatus, ContainerState } from '../../services/docke
 export interface PlatformMcpServices {
     docker: DockerManagerService;
     images: DockerImageService;
+    builds: BuildQueueService;
     buildAgents: BuildAgentRegistry;
+}
+
+/**
+ * What `start_build` and `get_build` answer with: `BuildJob` with its progress
+ * log cut to the newest lines — the builder streams up to 500, and a model
+ * asking "how is the build doing?" needs the tail, not the transcript.
+ */
+export interface BuildJobToolView {
+    id: string;
+    status: BuildJobStatus;
+    /** Repository URL as the user submitted it. */
+    gitUrl: string;
+    /** Tag the built image gets on success. */
+    imageTag: string;
+    /** Name of the container the builder creates after a successful build. */
+    containerName: string;
+    createdAt: Date;
+    /** Set when the job reached a terminal status. */
+    finishedAt?: Date;
+    /** Present only when status is 'failed'. */
+    errorMessage?: string;
+    /** The newest progress lines, oldest first. */
+    recentLogLines: string[];
 }
 
 /**

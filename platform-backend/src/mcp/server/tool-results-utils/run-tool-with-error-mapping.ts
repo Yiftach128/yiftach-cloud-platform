@@ -1,8 +1,12 @@
 import type { CallToolResult } from '@modelcontextprotocol/server';
 
+import { BuildJobNotFoundError } from '../../../services/builds/build-job-not-found-error.ts';
+import { BuildQueueFullError } from '../../../services/builds/build-queue-full-error.ts';
 import { DockerApiError } from '../../../services/docker/docker-api-error.ts';
 import { DockerConnectionError } from '../../../services/docker/docker-connection-error.ts';
 import { ImageNotManagedError } from '../../../services/docker/image-not-managed-error.ts';
+import { ImagePullError } from '../../../services/docker/image-pull-error.ts';
+import { ValidationError } from '../../../services/validation/validation-error.ts';
 
 /**
  * Runs one tool call and maps service-layer failures onto MCP tool errors, so
@@ -22,10 +26,19 @@ export async function runToolWithErrorMapping(call: () => Promise<CallToolResult
 
 function toToolErrorResult(error: unknown): CallToolResult {
     let text: string;
-    if (error instanceof ImageNotManagedError) {
+    if (error instanceof ValidationError) {
+        // The request parsers' messages name the offending field, which is what a model needs to correct.
+        text = `Invalid arguments: ${error.message}`;
+    } else if (error instanceof ImageNotManagedError) {
         // Not error.message: that one is worded for the delete endpoint ("refusing to delete it").
-        text = `Image "${error.image}" was not built by this platform, so it cannot be inspected here. `
+        text = `Image "${error.image}" was not built by this platform, so this tool cannot act on it. `
             + 'Only the images list_images reports are available.';
+    } else if (error instanceof ImagePullError) {
+        text = error.message;
+    } else if (error instanceof BuildQueueFullError) {
+        text = error.message;
+    } else if (error instanceof BuildJobNotFoundError) {
+        text = `Not found: ${error.message}`;
     } else if (error instanceof DockerApiError) {
         if (error.status === 404) {
             text = `Not found: ${error.message}`;

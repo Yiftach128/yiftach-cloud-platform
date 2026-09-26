@@ -4,8 +4,8 @@ const RESULT_PREVIEW_CHARS = 100;
 
 /**
  * Renders a run's live events for a terminal: the model's text is written as it
- * streams in (so the answer types itself out), and each tool call and result
- * gets a line of its own.
+ * streams in (so the answer types itself out), and each tool call, approval
+ * and result gets a line of its own.
  */
 export function printAgentEventToTerminal(event: AgentEvent): void {
     if (event.type === 'delta') {
@@ -13,7 +13,17 @@ export function printAgentEventToTerminal(event: AgentEvent): void {
         return;
     }
     if (event.type === 'tool_call') {
-        process.stdout.write(`\n    -> #${event.callId} ${event.name} ${JSON.stringify(event.arguments)}\n`);
+        let approvalMark: string;
+        if (event.needsApproval) {
+            approvalMark = '  (needs approval)';
+        } else {
+            approvalMark = '';
+        }
+        process.stdout.write(`\n    -> #${event.callId} ${event.name} ${JSON.stringify(event.arguments)}${approvalMark}\n`);
+        return;
+    }
+    if (event.type === 'tool_approval') {
+        process.stdout.write(`    == #${event.callId} ${event.name}: ${event.decision}\n`);
         return;
     }
     let verdict: string;
