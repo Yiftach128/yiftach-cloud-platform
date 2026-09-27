@@ -29,10 +29,14 @@ COPY --from=frontend-build /frontend/dist ./frontend-dist
 
 # Container defaults (the config defaults suit local dev on Windows instead): listen
 # on every interface — the published port decides who can reach it — talk to the
-# mounted daemon socket, and serve the UI.
+# mounted daemon socket, serve the UI, and write no chat traces: they are a developer
+# tool for `npm run dev`, and in a container they would only fill its own filesystem
+# (to trace a compose run anyway, set CHAT_TRACE_DIR=chat-traces on the service and
+# `docker cp` the files out of /app/chat-traces).
 ENV HOST=0.0.0.0 \
     DOCKER_HOST=unix:///var/run/docker.sock \
-    STATIC_DIR=/app/frontend-dist
+    STATIC_DIR=/app/frontend-dist \
+    CHAT_TRACE_DIR=""
 
 EXPOSE 3000
 

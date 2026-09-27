@@ -8,7 +8,9 @@
  * the defensive policy lives:
  *
  * - a cap on model calls, whose last call is made without tools, so a model
- *   that keeps asking is forced to answer with what it has;
+ *   that keeps asking is forced to answer with what it has — and is told so,
+ *   with the instruction to report unfinished work as unfinished, since a
+ *   model handed no tools and an open request tends to claim it complied;
  * - unknown tools, repeated calls and failed calls are fed back to the model as
  *   results it can read and correct, never thrown;
  * - a destructive call (stop, restart, delete) runs only after the approver —
@@ -27,12 +29,16 @@
  *   out of the model's context window (which the model server would truncate
  *   silently);
  * - the conversation itself has a character budget too: of a long one, the
- *   model reads only the newest turns that fit.
+ *   model reads only the newest turns that fit;
+ * - every run is handed to a tracer — each model call with the exact request
+ *   the model read, each event, and how the run ended — so a reply that went
+ *   wrong can be replayed afterwards; the default tracer keeps nothing.
  *
  * Stateless: a run takes the whole conversation and keeps nothing afterwards.
  */
 
 import type {
+    LlmChatRequest,
     LlmClient,
     LlmMessage,
     LlmReply,
@@ -44,6 +50,8 @@ import type {
     AgentEvent,
     AgentRunRequest,
     AgentRunResult,
+    AgentRunTrace,
+    AgentRunTracer,
     AgentStopReason,
     AgentTool,
     ChatTurn,
@@ -56,6 +64,8 @@ import type {
     ToolCallOutcome,
     ToolProvider,
 } from './interfaces.ts';
+import { mapAgentToolToLlmToolDefinition } from './map-agent-tool-to-llm-tool-definition.ts';
+import { NoOpAgentRunTracer } from './no-op-agent-run-tracer.ts';
 import { selectRecentTurnsWithinBudget } from './select-recent-turns-within-budget.ts';
 import { trimToolResultToBudget } from './trim-tool-result-to-budget.ts';
 
@@ -64,19 +74,32 @@ const DEFAULT_MAX_TOOL_CALLS_PER_TURN = 5;
 const DEFAULT_TOOL_RESULT_BUDGET_CHARS = 12_000;
 /**
  * What an 8192-token window leaves for the conversation once the system prompt
- * with the tool schemas (about 1500 tokens), a spent tool-result budget (about
- * 3500) and the answer being written (about 800) are set aside.
+ * with the fifteen tool schemas (about 3000 tokens, measured from a chat trace),
+ * a spent tool-result budget (about 3500) and the answer being written (about
+ * 800) are set aside: about 900 tokens, some 3600 characters of chat text.
  */
-const DEFAULT_HISTORY_BUDGET_CHARS = 8_000;
+const DEFAULT_HISTORY_BUDGET_CHARS = 3_600;
 /** The most one model turn may spend of the run's budget, so a greedy first turn cannot starve the later ones. */
 const TURN_BUDGET_SHARE = 0.5;
 /** Floor per result: enough for an error message or a short answer even when the budget is spent. */
 const MIN_RESULT_CHARS = 300;
+/**
+ * Appended for the capped last call, which offers no tools: without it the model
+ * reads a normal turn whose tools happen to be missing, and one that spent its
+ * calls trying to do something tends to write the ending the conversation seems
+ * to want ("it is now stopped"). Goes after the tool results, so the prefix the
+ * earlier calls shared stays cacheable.
+ */
+const NO_TOOLS_LEFT_NOTICE =
+    'You have used all the tool calls allowed for this reply, so no tools are available now. Answer with '
+    + 'what you already know. If something you were asked to do was not done, say so plainly instead of '
+    + 'claiming it was.';
 
 export class ToolCallingChatOrchestrator {
     private readonly llm: LlmClient;
     private readonly tools: ToolProvider;
     private readonly approver: ToolCallApprover;
+    private readonly tracer: AgentRunTracer;
     private readonly maxModelCalls: number;
     private readonly maxToolCallsPerTurn: number;
     private readonly toolResultBudgetChars: number;
@@ -86,6 +109,11 @@ export class ToolCallingChatOrchestrator {
         this.llm = options.llm;
         this.tools = options.tools;
         this.approver = options.approver;
+        if (options.tracer === undefined) {
+            this.tracer = new NoOpAgentRunTracer();
+        } else {
+            this.tracer = options.tracer;
+        }
         if (options.maxModelCalls === undefined) {
             this.maxModelCalls = DEFAULT_MAX_MODEL_CALLS;
         } else {
@@ -127,16 +155,26 @@ export class ToolCallingChatOrchestrator {
         for (const tool of tools) {
             toolsByName.set(tool.name, tool);
         }
-        const toolDefinitions: LlmToolDefinition[] = tools.map(toLlmToolDefinition);
+        const toolDefinitions: LlmToolDefinition[] = tools.map(mapAgentToolToLlmToolDefinition);
         const allToolsReadOnly: boolean = tools.every((tool: AgentTool) => tool.readOnly);
 
-        const messages: LlmMessage[] = [{
-            role: 'system',
-            content: buildAgentSystemPrompt(this.tools.getUsageInstructions(), allToolsReadOnly, new Date()),
-        }];
+        const systemPrompt: string = buildAgentSystemPrompt(this.tools.getUsageInstructions(), allToolsReadOnly, new Date());
+        const messages: LlmMessage[] = [{ role: 'system', content: systemPrompt }];
         for (const turn of selectRecentTurnsWithinBudget(request.turns, this.historyBudgetChars)) {
             messages.push(toLlmMessage(turn));
         }
+
+        // The trace opens once the request is settled, so its header holds what every
+        // model call of the run starts from; every event goes to it before it goes out.
+        const trace: AgentRunTrace = this.tracer.startRun({
+            request: request,
+            systemPrompt: systemPrompt,
+            tools: toolDefinitions,
+        });
+        const reportEvent = (event: AgentEvent): void => {
+            trace.recordEvent(event);
+            onEvent(event);
+        };
 
         const executedToolCalls: ExecutedToolCall[] = [];
         const ledger: RunToolCallLedger = { executedCallKeys: new Set(), deniedCallKeys: new Set() };
@@ -147,65 +185,84 @@ export class ToolCallingChatOrchestrator {
         let nextCallId: number = 1;
 
         const finish = (finalText: string, stopReason: AgentStopReason): AgentRunResult => {
-            return {
+            const result: AgentRunResult = {
                 finalText: finalText,
                 stopReason: stopReason,
                 toolCalls: executedToolCalls,
                 modelCalls: modelCalls,
                 peakPromptTokens: peakPromptTokens,
             };
+            trace.finishRun(result);
+            return result;
         };
 
-        while (true) {
-            modelCalls = modelCalls + 1;
-            const isLastAllowedCall: boolean = modelCalls >= this.maxModelCalls;
-            let offeredTools: LlmToolDefinition[];
-            if (isLastAllowedCall) {
-                offeredTools = [];
-            } else {
-                offeredTools = toolDefinitions;
-            }
+        try {
+            while (true) {
+                modelCalls = modelCalls + 1;
+                const isLastAllowedCall: boolean = modelCalls >= this.maxModelCalls;
+                let offeredTools: LlmToolDefinition[];
+                if (isLastAllowedCall) {
+                    offeredTools = [];
+                    messages.push({ role: 'system', content: NO_TOOLS_LEFT_NOTICE });
+                } else {
+                    offeredTools = toolDefinitions;
+                }
 
-            const reply: LlmReply = await this.llm.streamChat(
-                { messages: messages, tools: offeredTools },
-                (textDelta: string): void => onEvent({ type: 'delta', text: textDelta }),
-                signal,
-            );
-            peakPromptTokens = Math.max(peakPromptTokens, reply.promptTokens);
+                const llmRequest: LlmChatRequest = { messages: messages, tools: offeredTools };
+                const callStartedAt: number = Date.now();
+                const reply: LlmReply = await this.llm.streamChat(
+                    llmRequest,
+                    (textDelta: string): void => reportEvent({ type: 'delta', text: textDelta }),
+                    signal,
+                );
+                trace.recordModelCall({
+                    callNumber: modelCalls,
+                    request: llmRequest,
+                    reply: reply,
+                    durationMs: Date.now() - callStartedAt,
+                    aborted: signal.aborted,
+                });
+                peakPromptTokens = Math.max(peakPromptTokens, reply.promptTokens);
 
-            if (signal.aborted) {
-                return finish(reply.content, 'aborted');
-            }
-            if (reply.toolCalls.length === 0) {
-                return finish(reply.content, 'answered');
-            }
-            if (isLastAllowedCall) {
-                // No tools were offered, so these calls are the model's invention — the text is all there is.
-                return finish(reply.content, 'model_call_limit');
-            }
+                if (signal.aborted) {
+                    return finish(reply.content, 'aborted');
+                }
+                if (isLastAllowedCall) {
+                    // The forced answer, whatever it looks like: no tools were offered, so any
+                    // tool calls in it are the model's invention — the text is all there is.
+                    return finish(reply.content, 'model_call_limit');
+                }
+                if (reply.toolCalls.length === 0) {
+                    return finish(reply.content, 'answered');
+                }
 
-            messages.push({ role: 'assistant', content: reply.content, toolCalls: reply.toolCalls });
+                messages.push({ role: 'assistant', content: reply.content, toolCalls: reply.toolCalls });
 
-            const turnBudgetChars: number = Math.min(
-                remainingBudgetChars,
-                Math.floor(this.toolResultBudgetChars * TURN_BUDGET_SHARE),
-            );
-            const completedCalls: ExecutedToolCall[] = await this.runToolCalls(
-                reply.toolCalls, nextCallId, toolsByName, ledger, turnBudgetChars,
-                request.autoApproveToolCalls, onEvent, signal,
-            );
-            nextCallId = nextCallId + reply.toolCalls.length;
+                const turnBudgetChars: number = Math.min(
+                    remainingBudgetChars,
+                    Math.floor(this.toolResultBudgetChars * TURN_BUDGET_SHARE),
+                );
+                const completedCalls: ExecutedToolCall[] = await this.runToolCalls(
+                    reply.toolCalls, nextCallId, toolsByName, ledger, turnBudgetChars,
+                    request.autoApproveToolCalls, reportEvent, signal,
+                );
+                nextCallId = nextCallId + reply.toolCalls.length;
 
-            // Results go back in the order the calls were asked, whatever order they finished in.
-            for (const completed of completedCalls) {
-                messages.push({ role: 'tool', toolName: completed.name, content: completed.resultText });
-                executedToolCalls.push(completed);
-                remainingBudgetChars = Math.max(0, remainingBudgetChars - completed.resultText.length);
+                // Results go back in the order the calls were asked, whatever order they finished in.
+                for (const completed of completedCalls) {
+                    messages.push({ role: 'tool', toolName: completed.name, content: completed.resultText });
+                    executedToolCalls.push(completed);
+                    remainingBudgetChars = Math.max(0, remainingBudgetChars - completed.resultText.length);
+                }
+
+                if (signal.aborted) {
+                    return finish('', 'aborted');
+                }
             }
-
-            if (signal.aborted) {
-                return finish('', 'aborted');
-            }
+        } catch (error) {
+            // The model server failed: the trace says so, and the caller gets the rejection as before.
+            trace.failRun(error);
+            throw error;
         }
     }
 
@@ -422,10 +479,6 @@ function findReasonToRefuse(
         };
     }
     return undefined;
-}
-
-function toLlmToolDefinition(tool: AgentTool): LlmToolDefinition {
-    return { name: tool.name, description: tool.description, inputSchema: tool.inputSchema };
 }
 
 function toLlmMessage(turn: ChatTurn): LlmMessage {

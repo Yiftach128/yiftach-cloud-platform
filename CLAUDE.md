@@ -45,14 +45,16 @@ that performs image builds; no HTTP server). The frontend lives in `frontend/`
   imports from `src/` and nothing in `src/` imports from it (the `test/`-folder
   relationship); inside `mcp/`, `client/` → `server/`; inside `services/`: `validation/` → `builds/`, `build-agents/` →
   `docker/` ← `wsl/`, `validation/` → `ai-agent/` (for `ChatTurn`, the type its chat
-  parser returns), and `ai-agent/` → `llm/` (`docker/`, `build-agents/`, `images/`
-  and `llm/` import no other service folder, `ai-agent/` imports only `llm/`, and
-  only the front doors import `validation/`); inside `llm/`, a provider subfolder
+  parser returns), `ai-agent/` → `llm/`, and `chat-traces/` → `ai-agent/`, `llm/`
+  (`docker/`, `build-agents/`, `images/` and `llm/` import no other service folder,
+  `ai-agent/` imports only `llm/`, only the front doors import `validation/`, and
+  only `server.ts` imports `chat-traces/`); inside `llm/`, a provider subfolder
   (`ollama/`) imports the folder root, never the reverse. Builder: `worker/` → `platform/`, `git/`, `docker/`, which import
   neither each other nor `worker/`. Frontend: `pages/` → `components/` → `hooks/` →
   `fetchers/`. When a lower folder needs something from a higher one, it declares an
   interface the higher one implements (`docker/`'s `DockerDaemonLifecycle`,
-  implemented by `wsl/`; `ai-agent/`'s `ToolProvider`, implemented by `mcp/client/`)
+  implemented by `wsl/`; `ai-agent/`'s `ToolProvider`, implemented by `mcp/client/`,
+  and its `AgentRunTracer`, implemented by `chat-traces/`)
   instead of importing upward. A new folder states its place
   in the chain here when it is added.
 - **Each backend keeps its startup configuration in `src/config/config.ts`.** The
@@ -106,7 +108,7 @@ Server-Sent Events stream.
 - `src/server.ts` — composition root: imports `src/config/config.ts` (which loads
   `.env` and logs itself — `PORT`, `HOST`, `DOCKER_HOST`, `DOCKER_WSL_KEEPALIVE`,
   `BUILD_STALE_TIMEOUT_MS`, `STATIC_DIR`, `ALLOWED_HOSTS`, and the assistant's
-  `OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_NUM_CTX`), builds the services, mounts
+  `OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_NUM_CTX`, `CHAT_TRACE_DIR`), builds the services, mounts
   the host check first, then `express.json()`, the unversioned `/health` and `/mcp`,
   the routes under `/api/v1`, the static frontend after them, and the error handler
   last. No logic — its one `if/else` picks
@@ -114,7 +116,10 @@ Server-Sent Events stream.
   daemon, a `unix://` one gets `ExternalDockerDaemon`. The assistant is wired here
   too: `OllamaLlmClient` + the in-process MCP tool provider (one top-level `await`
   — connecting it is a handshake; closed again on shutdown) →
-  `ToolCallingChatOrchestrator` → `AiAgentChatService`. Building it contacts neither
+  `ToolCallingChatOrchestrator` → `AiAgentChatService`, the orchestrator given
+  `createChatTracerForDirectory(CHAT_TRACE_DIR)` as its tracer (no traces when
+  the folder is empty — that switch lives in the factory, like
+  `staticFrontend('')`). Building it contacts neither
   Ollama nor Docker, so the server starts with both down.
 - `src/middleware/error-handler.ts` — the only place service errors become HTTP:
   `ValidationError` and malformed JSON → 400, `DockerApiError` → its status,
@@ -286,10 +291,14 @@ Server-Sent Events stream.
   loop (deliberately no agent framework or AI SDK): conversation + tool schemas →
   model; tool calls are executed and appended as results; repeat until the model
   answers in plain text. Stateless — a run takes the whole conversation
-  (`ChatTurn[]`, the frontend's shape) and keeps nothing. It owns the `ToolProvider`
-  and `ToolCallApprover` interfaces and imports only `llm/`. The defensive policy
+  (`ChatTurn[]`, the frontend's shape) and keeps nothing. It owns the `ToolProvider`,
+  `ToolCallApprover` and `AgentRunTracer` interfaces and imports only `llm/`. The defensive policy
   lives here: a model-call
-  cap (6) whose last call offers no tools, forcing an answer
+  cap (6) whose last call offers no tools, forcing an answer — and appends a
+  system message saying so (`NO_TOOLS_LEFT_NOTICE`: the tools are used up,
+  answer with what you know, report what was not done as not done), because a
+  model handed no tools and an open request tends to claim it complied; the
+  message goes after the tool results so the shared prefix stays cacheable
   (`stopReason: 'model_call_limit'`); unknown tools, exact repeats of an executed
   call, and thrown tool errors are fed back in band, never thrown; **every
   destructive call waits for the approver** — the tool's `destructive` flag
@@ -314,8 +323,9 @@ Server-Sent Events stream.
   one message per call; tool results share a character budget (12000 per run, at
   most half of it per turn, split across the turn's calls —
   `trim-tool-result-to-budget.ts` keeps head + tail); and the conversation has a
-  character budget of its own (8000 — what an 8192-token window leaves beside the
-  system prompt, a spent tool-result budget and the answer):
+  character budget of its own (3600 — what an 8192-token window leaves beside the
+  measured 3000-token prefix of system prompt and tool schemas, a spent
+  tool-result budget and the answer):
   `select-recent-turns-within-budget.ts` gives the model the newest turns that fit —
   the newest always, no gaps, never opening on an assistant turn — because the chat
   UI sends the whole conversation every time and Ollama truncates silently. Progress
@@ -350,7 +360,47 @@ Server-Sent Events stream.
   and the run's abort signal (Stop, the tab closing) resolves it as denied
   without an event — no timeout on purpose, the person's absence is Stop.
   The evals bypass the service and construct the orchestrator directly, with
-  their own approvers.
+  their own approvers. **Every run is handed to an `AgentRunTracer`** (the
+  `tracer` option; `NoOpAgentRunTracer` when absent, so the evals trace
+  nothing): `startRun` once the request is settled (the turns as received, the
+  system prompt, the tool catalog), `recordModelCall` after each `streamChat`
+  with the exact `LlmChatRequest` the model read, its `LlmReply` and the
+  duration, `recordEvent` for every event before it reaches the caller, and
+  `finishRun` with the result or `failRun` with the model-server error. The
+  loop asks nothing of the trace and never waits for it; `chat-traces/` is what
+  implements it.
+- `src/services/chat-traces/` — the record of what the assistant was sent and
+  answered, for investigating a reply after the fact. `JsonLinesChatTracer`
+  writes one `.jsonl` file per run into `CHAT_TRACE_DIR` (named
+  `<start time>-<8-char run id>`, colons swapped for dashes — Windows file
+  names; the server logs `chat trace: <path>` at every run, the line to find
+  after a bad reply), through `JsonLinesChatTrace`, which serializes each
+  record the moment it arrives (the loop hands over its *live* message list,
+  which grows after each call) and appends it, so a run that dies mid-way
+  still leaves the calls so far. The file format is `interfaces.ts`, one
+  union of records told apart by `type`: `run_start` (run id, model, context
+  size, auto-approve, the turns as received, the tool catalog once),
+  `model_call` (the messages exactly as sent — windowed history, trimmed tool
+  results — the reply, duration, `toolsOffered`, which is false on the capped
+  last call), `event` (tool calls, approvals, results; deltas are skipped, the
+  reply holds the text whole), and `run_end` or `run_failed`. **A trace, not a
+  log:** one file per execution, machine-readable, replayable (the evals'
+  `replay:model-call`), where a log is a running commentary for a person —
+  and "logs" already means container logs and build logs here. A write
+  failure is reported once on the console and the rest of that run goes
+  unrecorded: a trace must never fail the chat. `createChatTracerForDirectory`
+  answers `NoOpAgentRunTracer` for an empty folder, keeping the on/off switch
+  out of `server.ts`. On by default (`chat-traces`, gitignored, relative to
+  the working directory), because the reply worth investigating is never the
+  one that was expected; the traces hold the user's chat text and whatever
+  tool results the model read, on the local disk only. **A developer tool for
+  `npm run dev`, not a compose feature:** the image switches it off
+  (`CHAT_TRACE_DIR=""` in the root `Dockerfile`), because in a container the
+  files would only fill its own filesystem, unread, until the next rebuild
+  discarded them; a bind mount was weighed and declined as plumbing for files
+  nobody in the container's audience reads. To trace a compose run anyway, set
+  `CHAT_TRACE_DIR=chat-traces` on the `platform` service and `docker cp` the
+  files out of `/app/chat-traces`.
 - `evals/` (beside `src/`, not under it) — terminal entry points that drive the agent
   without HTTP. They stand to `src/` as a `test/` folder would: they import from
   `../src/` and exercise it, nothing in `src/` knows they exist, and they are not
@@ -392,7 +442,24 @@ Server-Sent Events stream.
   and re-raises SIGINT so the run aborts) — the chat's Approve/Deny in terminal
   form. A build it starts only sits in the script's own queue, which no builder
   polls: a real build test goes through the UI. The case list is plain data on
-  purpose: the later eval harness loads it rather than replacing it.
+  purpose: the later eval harness loads it rather than replacing it. A case may
+  carry `precedingTurns` — the conversation its prompt continues, as a chat
+  trace records it — so a failed chat becomes a regression case
+  (`stop-container-named-in-earlier-turn`: "Is nginx-web running?", the
+  assistant's answer, then "Stop it."; the reply in the chat had claimed the
+  stop without calling anything).
+  `npm run replay:model-call -- chat-traces/<file>.jsonl [n] [--current-prompt]`
+  (`replay-recorded-model-call.ts`) re-sends one model call of a chat trace —
+  the last by default, the one that produced the answer — to the configured
+  Ollama and prints the recorded reply beside the new one, with a same/different
+  verdict on the tool calls (argument keys sorted) and on the text. Exact mode
+  sends the recorded messages and tool catalog as they were, so at temperature
+  0 a wrong reply reproduces in seconds without the chat, Docker or the tools;
+  `--current-prompt` keeps the recorded conversation but rebuilds the system
+  prompt (with the recorded start time as its "now") and the tool definitions
+  from the code as it is now, through the real MCP catalog — the loop for
+  fixing a prompt: edit, replay, see whether the model now chooses right. A
+  trace made on another model is replayed with a note saying so.
 - `src/services/docker/` — the daemon-facing services. `DockerManagerService` is the
   typed facade for container operations (list/inspect/create/start/stop/logs/delete);
   `DockerImageService` owns image acquisition and lifecycle (exists-check, registry
@@ -446,8 +513,9 @@ Server-Sent Events stream.
   The container name/ports/env field rules live once in `parse-container-fields.ts`,
   shared by the create-container and start-build parsers. `parse-chat-request.ts`
   guards against junk, not against long conversations (that is the agent's history
-  window): at most 100 turns, the last one a `user` turn of at most 4000 characters
-  — the one turn the window always keeps, so the one whose size must be bounded.
+  window): at most 100 turns, the last one a `user` turn of at most 3600 characters
+  — the one turn the window always keeps, so the one whose size must be bounded,
+  and the agent's whole history budget, so that turn alone can never exceed it.
   Consecutive `user` turns are valid: the UI drops a reply that failed before its
   first fragment. Its result is the agent's `AgentRunRequest`: the turns plus
   `autoApproveToolCalls`, an optional boolean (absent → false).
@@ -785,6 +853,17 @@ classes; JSX files use `.tsx`).
   is up only while the distro is — and nothing boots the distro for a chat (only a
   failed Docker request does): the chat is deliberately not coupled to WSL, a down
   model server is an `llm_unavailable` error event.
+- Chat traces: every chat run writes `platform-backend/chat-traces/<time>-<id>.jsonl`
+  (the server logs `chat trace: <path>`), one JSON line per record; `run_start`,
+  then `model_call` / `event` lines, then `run_end`. To investigate a reply,
+  find its file by time and read its last `model_call`: `messages` is exactly
+  what the model was sent, `reply.toolCalls` what it asked for (empty when it
+  answered in text without calling anything) and `reply.promptTokens` how
+  close the prompt came to `OLLAMA_NUM_CTX`. `npm run replay:model-call --
+  chat-traces/<file>.jsonl` re-sends that call (needs Ollama, not Docker) and
+  says whether the reply came back the same; with `--current-prompt` after a
+  prompt change, it says whether the change fixed it. `CHAT_TRACE_DIR=` (empty)
+  in `.env` switches tracing off.
 - Chat endpoint: `curl -N -X POST http://127.0.0.1:3000/api/v1/chat -H "Content-Type:
   application/json" -d '{"turns":[{"role":"user","text":"which containers are
   running?"}]}'` prints the event stream as it arrives (`-N` turns curl's own
@@ -807,7 +886,7 @@ classes; JSX files use `.tsx`).
   UI; build context is the repo root) and `builder`
   (`builder-service-backend/Dockerfile`, which finds the platform at
   `http://platform:3000/api/v1`). Container env defaults (`HOST=0.0.0.0`,
-  `DOCKER_HOST=unix:///var/run/docker.sock`, `STATIC_DIR`) live in the two
+  `DOCKER_HOST=unix:///var/run/docker.sock`, `STATIC_DIR`, `CHAT_TRACE_DIR=""`) live in the two
   Dockerfiles; compose carries only the wiring — which includes the platform's
   `ALLOWED_HOSTS` (`localhost,127.0.0.1,platform`), because `platform` is a compose
   service name, and `OLLAMA_URL` (`http://ollama:11434`) for the same reason. The

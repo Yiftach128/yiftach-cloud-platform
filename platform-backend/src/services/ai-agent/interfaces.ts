@@ -8,7 +8,7 @@
  * SDK and of every other service folder except `llm/`.
  */
 
-import type { LlmClient } from '../llm/interfaces.ts';
+import type { LlmChatRequest, LlmClient, LlmReply, LlmToolDefinition } from '../llm/interfaces.ts';
 
 /** Who wrote one chat turn. */
 export type ChatRole = 'user' | 'assistant';
@@ -206,17 +206,68 @@ export interface AgentRunResult {
     peakPromptTokens: number;
 }
 
+/**
+ * What the loop has settled before its first model call — the header of a run's
+ * trace: the request as received, the system prompt written for it and the
+ * tool catalog it will offer.
+ */
+export interface AgentRunStart {
+    request: AgentRunRequest;
+    systemPrompt: string;
+    tools: LlmToolDefinition[];
+}
+
+/**
+ * One call to the model as the loop made it. `request.messages` is the loop's
+ * live list, which grows after this call: a trace that keeps it must copy or
+ * serialize it before returning.
+ */
+export interface TracedModelCall {
+    /** Numbers the run's model calls from 1. */
+    callNumber: number;
+    request: LlmChatRequest;
+    reply: LlmReply;
+    durationMs: number;
+    /** True when the run was aborted while this call streamed, so the reply is what had arrived. */
+    aborted: boolean;
+}
+
+/**
+ * The record of one run as the loop makes it: every model call with the exact
+ * request the model read, every event the run reported, and how the run
+ * ended. Written for a program to read back — a call can be replayed from
+ * it — which is what makes it a trace rather than a log. Declared here,
+ * implemented by whoever keeps traces (`services/chat-traces/` writes files).
+ * An implementation never throws: a trace must not fail the run it records.
+ */
+export interface AgentRunTrace {
+    recordModelCall(call: TracedModelCall): void;
+    /** Every event, in order; an implementation may skip the text deltas — the reply holds the text whole. */
+    recordEvent(event: AgentEvent): void;
+    /** The run ended normally: answered, capped, or aborted. */
+    finishRun(result: AgentRunResult): void;
+    /** The run rejected — the model server failed. */
+    failRun(error: unknown): void;
+}
+
+/** Opens the trace of one run — declared here, implemented by whoever keeps traces. */
+export interface AgentRunTracer {
+    startRun(start: AgentRunStart): AgentRunTrace;
+}
+
 export interface ToolCallingChatOrchestratorOptions {
     llm: LlmClient;
     tools: ToolProvider;
     /** Asked before any destructive call runs. */
     approver: ToolCallApprover;
+    /** Records every run for later inspection and replay. Defaults to recording nothing. */
+    tracer?: AgentRunTracer;
     /** Cap on model calls per run; the last allowed call is made without tools. Defaults to 6. */
     maxModelCalls?: number;
     /** Cap on tool calls executed per model turn; the rest are refused in band. Defaults to 5. */
     maxToolCallsPerTurn?: number;
     /** Characters of tool results one run may put into the context window, shared by all its calls. Defaults to 12000. */
     toolResultBudgetChars?: number;
-    /** Characters of conversation the model reads: the newest turns that fit, the newest always. Defaults to 8000. */
+    /** Characters of conversation the model reads: the newest turns that fit, the newest always. Defaults to 3600. */
     historyBudgetChars?: number;
 }

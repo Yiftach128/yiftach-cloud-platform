@@ -64,6 +64,24 @@ export interface IConfig {
      * a 6 GB GPU.
      */
     OLLAMA_NUM_CTX: number;
+    /**
+     * Folder the chat writes one trace file per run into: every model call with
+     * the exact prompt the model read, every tool event, and how the run ended
+     * (`services/chat-traces/`), so a reply that went wrong can be replayed
+     * (`npm run replay:model-call`). Relative to the working directory. Empty
+     * disables tracing. On by default, because the reply worth investigating is
+     * never the one that was expected.
+     */
+    CHAT_TRACE_DIR: string;
+}
+
+// Resolved outside the literal: an empty CHAT_TRACE_DIR means "off", which the
+// `||` defaulting of the other keys would turn back into the default.
+let chatTraceDir: string;
+if (process.env.CHAT_TRACE_DIR === undefined) {
+    chatTraceDir = 'chat-traces';
+} else {
+    chatTraceDir = process.env.CHAT_TRACE_DIR;
 }
 
 export const config: IConfig = {
@@ -77,6 +95,7 @@ export const config: IConfig = {
     OLLAMA_URL: process.env.OLLAMA_URL || 'http://127.0.0.1:11434',
     OLLAMA_MODEL: process.env.OLLAMA_MODEL || 'qwen3:4b-instruct-2507-q4_K_M',
     OLLAMA_NUM_CTX: Number(process.env.OLLAMA_NUM_CTX || '8192'),
+    CHAT_TRACE_DIR: chatTraceDir,
 };
 
 console.log('config:', config);

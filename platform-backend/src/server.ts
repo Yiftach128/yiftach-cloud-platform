@@ -40,6 +40,7 @@ import { postContainerRoute } from './routes/post-container.ts';
 import { AiAgentChatService } from './services/ai-agent/ai-agent-chat-service.ts';
 import { ToolCallApprovalGate } from './services/ai-agent/tool-call-approval-gate.ts';
 import { ToolCallingChatOrchestrator } from './services/ai-agent/tool-calling-chat-orchestrator.ts';
+import { createChatTracerForDirectory } from './services/chat-traces/create-chat-tracer-for-directory.ts';
 import { BuildAgentRegistry } from './services/build-agents/build-agent-registry.ts';
 import { BuildJobRegistry } from './services/builds/build-job-registry.ts';
 import { BuildQueueService } from './services/builds/build-queue-service.ts';
@@ -95,6 +96,8 @@ const mcp = new McpHttpEndpoint(mcpServices);
 // server factory as /mcp, so the same catalog, validation and error mapping.
 // A tool call that changes something waits at the approval gate for the
 // person's answer, which POST /chat/approvals hands in through the chat service.
+// Every run is traced to CHAT_TRACE_DIR — the exact prompts the model read and
+// what it answered — so a reply that went wrong can be replayed afterwards.
 const llm = new OllamaLlmClient({
     baseUrl: config.OLLAMA_URL,
     model: config.OLLAMA_MODEL,
@@ -103,7 +106,16 @@ const llm = new OllamaLlmClient({
 const aiAgentTools = await connectInProcessMcpToolProvider(mcpServices);
 const aiAgentApprovalGate = new ToolCallApprovalGate();
 const aiAgentChat = new AiAgentChatService(
-    new ToolCallingChatOrchestrator({ llm: llm, tools: aiAgentTools, approver: aiAgentApprovalGate }),
+    new ToolCallingChatOrchestrator({
+        llm: llm,
+        tools: aiAgentTools,
+        approver: aiAgentApprovalGate,
+        tracer: createChatTracerForDirectory({
+            directory: config.CHAT_TRACE_DIR,
+            model: config.OLLAMA_MODEL,
+            contextTokens: config.OLLAMA_NUM_CTX,
+        }),
+    }),
     aiAgentApprovalGate,
 );
 

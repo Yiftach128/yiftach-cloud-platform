@@ -15,7 +15,7 @@ import type { AgentRunRequest, ChatTurn } from '../ai-agent/interfaces.ts';
 import { ValidationError } from './validation-error.ts';
 
 const MAX_TURNS = 100;
-const MAX_LAST_TURN_CHARS = 4_000;
+const MAX_LAST_TURN_CHARS = 3_600;
 
 export function parseChatRequest(body: unknown): AgentRunRequest {
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
