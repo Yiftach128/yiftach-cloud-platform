@@ -250,7 +250,12 @@ export class ToolCallingChatOrchestrator {
 
                 // Results go back in the order the calls were asked, whatever order they finished in.
                 for (const completed of completedCalls) {
-                    messages.push({ role: 'tool', toolName: completed.name, content: completed.resultText });
+                    messages.push({
+                        role: 'tool',
+                        toolName: completed.name,
+                        toolCallId: completed.llmToolCallId,
+                        content: completed.resultText,
+                    });
                     executedToolCalls.push(completed);
                     remainingBudgetChars = Math.max(0, remainingBudgetChars - completed.resultText.length);
                 }
@@ -431,6 +436,7 @@ export class ToolCallingChatOrchestrator {
         return {
             name: call.name,
             arguments: call.arguments,
+            llmToolCallId: call.id,
             isError: outcome.isError,
             resultText: resultText,
             approval: approval,

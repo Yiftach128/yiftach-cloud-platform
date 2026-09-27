@@ -1,5 +1,6 @@
-import type { ExecutedToolCall } from '../src/services/ai-agent/interfaces.ts';
-import type { ExpectedToolCall, ToolChoiceCase, ToolChoiceCaseScore } from './interfaces.ts';
+import type { ExecutedToolCall } from '../../src/services/ai-agent/interfaces.ts';
+import type { ExpectedToolCall, ToolChoiceCase } from '../cases/interfaces.ts';
+import type { ToolChoiceCaseScore } from './interfaces.ts';
 
 /**
  * Scores one case from the tool calls a run made: every expected call must have

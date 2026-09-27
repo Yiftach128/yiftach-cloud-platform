@@ -6,12 +6,12 @@ import type {
     ContainerToolDetails,
     ContainerToolSummary,
     ImageToolSummary,
-} from '../src/mcp/server/interfaces.ts';
-import { renderValueAsToolResultJson } from '../src/mcp/server/tool-results-utils/tool-result-builders.ts';
-import { toShortImageId } from '../src/mcp/server/tool-results-utils/tool-result-value-formatters.ts';
-import type { ToolCallOutcome } from '../src/services/ai-agent/interfaces.ts';
-import type { BuildAgent } from '../src/services/build-agents/interfaces.ts';
-import type { ImageDetails } from '../src/services/docker/interfaces.ts';
+} from '../../src/mcp/server/interfaces.ts';
+import { renderValueAsToolResultJson } from '../../src/mcp/server/tool-results-utils/tool-result-builders.ts';
+import { toShortImageId } from '../../src/mcp/server/tool-results-utils/tool-result-value-formatters.ts';
+import type { ToolCallOutcome } from '../../src/services/ai-agent/interfaces.ts';
+import type { BuildAgent } from '../../src/services/build-agents/interfaces.ts';
+import type { ImageDetails } from '../../src/services/docker/interfaces.ts';
 
 /**
  * Fixed tool results describing a small made-up platform — four containers

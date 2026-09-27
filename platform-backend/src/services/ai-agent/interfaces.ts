@@ -189,6 +189,8 @@ export type ToolCallApprovalOutcome = 'not_needed' | 'approved' | 'auto_approved
 export interface ExecutedToolCall {
     name: string;
     arguments: Record<string, unknown>;
+    /** The id the model gave the call, when its provider issues one; the tool result message names it. */
+    llmToolCallId?: string;
     isError: boolean;
     /** The result exactly as the model read it (already trimmed). */
     resultText: string;

@@ -12,16 +12,17 @@
  */
 
 import { config } from '../src/config/config.ts';
-import type { AgentRunResult } from '../src/services/ai-agent/interfaces.ts';
+import type { AgentRunResult, ChatTurn } from '../src/services/ai-agent/interfaces.ts';
 import { ToolCallingChatOrchestrator } from '../src/services/ai-agent/tool-calling-chat-orchestrator.ts';
 import { OllamaLlmClient } from '../src/services/llm/ollama/ollama-llm-client.ts';
-import { AutoApproveToolCallApprover } from './auto-approve-tool-call-approver.ts';
-import { CannedResultsToolProvider } from './canned-results-tool-provider.ts';
+import { AutoApproveToolCallApprover } from './fakes/auto-approve-tool-call-approver.ts';
+import { CannedResultsToolProvider } from './fakes/canned-results-tool-provider.ts';
 import { connectPlatformToolProviderForEvals } from './connect-platform-tool-provider-for-evals.ts';
-import type { ToolChoiceCase, ToolChoiceCaseScore } from './interfaces.ts';
+import type { ToolChoiceCase } from './cases/interfaces.ts';
+import type { ToolChoiceCaseScore } from './scoring/interfaces.ts';
 import { printAgentEventToTerminal } from './print-agent-event-to-terminal.ts';
-import { scoreToolChoiceCase } from './score-tool-choice-case.ts';
-import { TOOL_CHOICE_CASES } from './tool-choice-cases.ts';
+import { scoreToolChoiceCase } from './scoring/score-tool-choice-case.ts';
+import { TOOL_CHOICE_CASES } from './cases/tool-choice-cases.ts';
 
 async function main(): Promise<void> {
     const llm = new OllamaLlmClient({
@@ -56,9 +57,16 @@ async function main(): Promise<void> {
         console.log(`\n[${index + 1}/${selectedCases.length}] ${testCase.id}: "${testCase.prompt}"`);
 
         const caseStartedAt: number = Date.now();
+        const promptTurn: ChatTurn = { role: 'user', text: testCase.prompt };
+        let turns: ChatTurn[];
+        if (testCase.precedingTurns === undefined) {
+            turns = [promptTurn];
+        } else {
+            turns = testCase.precedingTurns.concat([promptTurn]);
+        }
         // Not auto-approved: the ask is part of what the output shows, and the approver answers it.
         const result: AgentRunResult = await orchestrator.run(
-            { turns: [{ role: 'user', text: testCase.prompt }], autoApproveToolCalls: false },
+            { turns: turns, autoApproveToolCalls: false },
             printAgentEventToTerminal,
             new AbortController().signal,
         );

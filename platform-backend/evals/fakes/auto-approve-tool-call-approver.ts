@@ -1,4 +1,4 @@
-import type { ToolCallApprovalRequest, ToolCallApprover, ToolCallDecision } from '../src/services/ai-agent/interfaces.ts';
+import type { ToolCallApprovalRequest, ToolCallApprover, ToolCallDecision } from '../../src/services/ai-agent/interfaces.ts';
 
 /**
  * The tool-choice check's `ToolCallApprover`: approves every call. Nothing

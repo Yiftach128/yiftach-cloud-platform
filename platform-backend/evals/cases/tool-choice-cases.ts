@@ -89,6 +89,18 @@ export const TOOL_CHOICE_CASES: ToolChoiceCase[] = [
         allowedExtraTools: ['list_containers', 'get_container'],
     },
     {
+        // The failure seen in the chat (2026-09-26): asked to stop a container it had just
+        // reported on, the model answered that it was stopped without calling anything.
+        id: 'stop-container-named-in-earlier-turn',
+        precedingTurns: [
+            { role: 'user', text: 'Is nginx-web running?' },
+            { role: 'assistant', text: 'Yes, nginx-web is running (Up 3 hours), publishing 8080->80/tcp.' },
+        ],
+        prompt: 'Stop it.',
+        expectedToolCalls: [{ name: 'stop_container', arguments: { container: 'nginx-web' } }],
+        allowedExtraTools: ['list_containers', 'get_container'],
+    },
+    {
         id: 'restart-container',
         prompt: 'Restart redis-cache, please.',
         expectedToolCalls: [{ name: 'restart_container', arguments: { container: 'redis-cache' } }],

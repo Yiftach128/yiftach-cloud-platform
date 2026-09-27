@@ -9,6 +9,13 @@
 
 /** One tool call as the model wrote it — the name and arguments are not yet checked against anything. */
 export interface LlmToolCall {
+    /**
+     * The call's id when the provider issues one. Some APIs (Anthropic, the
+     * OpenAI style) pair a tool result to its call by this id and reject a
+     * result without it; Ollama issues none and pairs by tool name. Carried
+     * through untouched so the result can name it (`LlmToolResultMessage.toolCallId`).
+     */
+    id?: string;
     name: string;
     arguments: Record<string, unknown>;
 }
@@ -35,6 +42,8 @@ export interface LlmAssistantMessage {
 export interface LlmToolResultMessage {
     role: 'tool';
     toolName: string;
+    /** The `id` of the call this answers, when the call had one (see `LlmToolCall.id`). */
+    toolCallId?: string;
     content: string;
 }
 

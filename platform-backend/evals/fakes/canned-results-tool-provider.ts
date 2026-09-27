@@ -1,4 +1,4 @@
-import type { AgentTool, ToolCallOutcome, ToolProvider } from '../src/services/ai-agent/interfaces.ts';
+import type { AgentTool, ToolCallOutcome, ToolProvider } from '../../src/services/ai-agent/interfaces.ts';
 import { cannedPlatformToolResult } from './canned-platform-tool-results.ts';
 
 /**

@@ -1,0 +1,39 @@
+# The AI assistant's eval suite, run by Promptfoo (`npm run eval` from
+# platform-backend/). Each provider entry is the whole agent on one model
+# (`promptfoo-agent-provider.ts`); the tests are the tool-choice cases
+# (`promptfoo-tests-from-tool-choice-cases.ts`); every row is scored by
+# `assert-tool-choice.ts`. Results: providers across, cases down.
+# `file://` paths are relative to this file.
+description: YCP assistant — tool choice, by model
+
+prompts:
+    - '{{prompt}}'
+
+providers:
+    - id: file://promptfoo-agent-provider.ts
+      label: qwen3 4B instruct
+      config:
+          llm: ollama
+          model: qwen3:4b-instruct-2507-q4_K_M
+
+tests: file://promptfoo-tests-from-tool-choice-cases.ts
+
+defaultTest:
+    options:
+        # A case's earlier turns and expectations are arrays; without this,
+        # Promptfoo would fan each array out into one test per element.
+        disableVarExpansion: true
+    assert:
+        - type: javascript
+          value: file://assert-tool-choice.ts
+
+evaluateOptions:
+    # One GPU: two models loading at once would only queue inside Ollama and
+    # trip the client's idle watchdog.
+    maxConcurrency: 1
+
+# After every run, `record-eval-run-results.ts` writes the run into
+# ../results/runs/ (one JSON per model) and regenerates ../results/README.md.
+# The suffix is the hook name; Promptfoo also looks the export up by it.
+extensions:
+    - file://record-eval-run-results.ts:afterAll

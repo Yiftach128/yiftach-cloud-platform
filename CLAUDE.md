@@ -43,7 +43,8 @@ that performs image builds; no HTTP server). The frontend lives in `frontend/`
   `services/` (it imports only `ai-agent/` and `llm/`, for the events and the
   failures it maps); `evals/`, which sits *beside* `src/`,
   imports from `src/` and nothing in `src/` imports from it (the `test/`-folder
-  relationship); inside `mcp/`, `client/` → `server/`; inside `services/`: `validation/` → `builds/`, `build-agents/` →
+  relationship) — inside it, the root scripts and `promptfoo/` → `scoring/` →
+  `cases/`, and `fakes/` imports only `src/`; inside `mcp/`, `client/` → `server/`; inside `services/`: `validation/` → `builds/`, `build-agents/` →
   `docker/` ← `wsl/`, `validation/` → `ai-agent/` (for `ChatTurn`, the type its chat
   parser returns), `ai-agent/` → `llm/`, and `chat-traces/` → `ai-agent/`, `llm/`
   (`docker/`, `build-agents/`, `images/` and `llm/` import no other service folder,
@@ -284,7 +285,10 @@ Server-Sent Events stream.
   reproducible; failures arrive as a non-2xx status *or* an `{"error"}` line inside
   a 200 stream, like Docker's progress streams), `ollama-chat-mapper.ts` (the wire
   shapes and the mapping — Ollama delivers tool calls whole, never as partial JSON,
-  and wants `tool_name` on result messages) and `read-ndjson-stream.ts` (line
+  and wants `tool_name` on result messages; it issues no call id, so the seam's
+  optional `LlmToolCall.id` and `toolCallId` on the result — which the loop
+  carries from call to result for the APIs that pair the two by id (Anthropic,
+  the OpenAI style) — stay unset here) and `read-ndjson-stream.ts` (line
   buffering across network chunks, with streamed UTF-8 decoding so a multi-byte
   character split between chunks survives).
 - `src/services/ai-agent/` — `ToolCallingChatOrchestrator`, the hand-written agent
@@ -460,6 +464,54 @@ Server-Sent Events stream.
   from the code as it is now, through the real MCP catalog — the loop for
   fixing a prompt: edit, replay, see whether the model now chooses right. A
   trace made on another model is replayed with a note saying so.
+  **Layout:** the root holds the entry points, their console helpers
+  (`print-agent-event-to-terminal.ts`, `terminal-tool-call-approver.ts`) and
+  the one shared wiring file (`connect-platform-tool-provider-for-evals.ts`);
+  `cases/` is the case data and its types, `scoring/` the judges
+  (`score-tool-choice-case.ts`, shared by both runners), `fakes/` the stand-ins
+  for what the agent talks to (the canned platform, the tool provider that
+  serves the real catalog but answers from it, the approver that always says
+  yes), `promptfoo/` the eval harness and `results/` its committed runs and
+  table. **The harness is Promptfoo**
+  (`npm run eval`; a dev dependency, chosen 2026-09-27 over a hand-rolled
+  runner, Vercel's eve, Evalite and vitest-evals): `promptfoo-config.yaml` is
+  the suite — one provider entry per model, each the whole agent on that
+  model through `promptfoo-agent-provider.ts` (Promptfoo's `ApiProvider`: the
+  entry's `config` names the `llm` and the `model`, the reply text is the
+  output, the executed tool calls travel in `metadata`, the MCP link is
+  closed in `cleanup`), the tests loaded from
+  `promptfoo-tests-from-tool-choice-cases.ts` (the same case list; the case
+  id is the description, so `--filter-pattern` selects by id; earlier turns
+  and expectations ride as vars with expansion off), every row scored by
+  `assert-tool-choice.ts` (a `javascript` assertion delegating to the
+  scorer), concurrency 1 for the one GPU. Promptfoo imports the `.ts` files
+  through `tsx`; its database, cache and logs live under `~/.promptfoo`,
+  nothing in the repo; `npm run eval:view` opens its viewer;
+  `PROMPTFOO_DISABLE_TELEMETRY=1` keeps its usage pings off. **Every run records
+  itself:** the `afterAll` extension hook `record-eval-run-results.ts`
+  (`file://…:afterAll` — the suffix is the hook name and the export Promptfoo
+  looks up, so the module has no default export, which would shadow it) folds
+  the run into `evals/results/<model>.json`, **one merged file per model**
+  (`EvalModelResults`): the cases the run covered replace their entries, the
+  rest stay, so the file always holds the newest verdict per case — each with
+  the time and Promptfoo eval id it came from — and a batch or a single-case
+  rerun changes cells, never adds files (a per-run file was the first shape,
+  dropped because every partial run added a superseded file). A row whose
+  provider failed before a run (the model server unreachable) is skipped, not
+  recorded as a verdict. Each verdict is the run distilled — passed, reasons,
+  tool calls, reply text, prompt size, latency; about 1 KB a case, where
+  Promptfoo's own output is about 10 KB a row and stays in `~/.promptfoo`,
+  reachable by that eval id. The hook then regenerates
+  `evals/results/README.md` through `render-eval-results-table.ts`: cases
+  down, models across, pass count, peak prompt tokens, median latency, last
+  recorded, a failures list; `npm run eval:table`
+  (`regenerate-eval-results-table.ts`) rebuilds it by hand. Both are
+  committed: the model files are the evidence, the table the summary. Runs
+  on this machine go in batches of about six cases (`--filter-pattern` on the
+  case ids): an eleven-case run hit the WSL freeze at five minutes, sixes
+  never did, and the merge makes the batching free.
+  `check:tool-choice` stays as the Docker-free fast path until the suite
+  covers it.
 - `src/services/docker/` — the daemon-facing services. `DockerManagerService` is the
   typed facade for container operations (list/inspect/create/start/stop/logs/delete);
   `DockerImageService` owns image acquisition and lifecycle (exists-check, registry
