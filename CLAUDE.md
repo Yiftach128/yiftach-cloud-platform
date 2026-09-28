@@ -414,32 +414,32 @@ Server-Sent Events stream.
   `tsconfig.json` deliberately keeps building `src/` alone, so `dist/` keeps its
   layout. The scripts build their own services with the do-nothing
   `ExternalDockerDaemon`, so a script never boots or holds the WSL distro.
-  `npm run check:tool-choice`
-  (`run-tool-choice-check.ts`) runs the cases in `tool-choice-cases.ts` (prompt →
-  expected calls with subset-matched arguments, plus allowed extras; includes
-  no-tool and multi-tool cases) through the real loop, the configured model and the
-  *real* MCP tool catalog, with one substitution — `CannedResultsToolProvider`
-  answers every call from `canned-platform-tool-results.ts` — so it needs no Docker
-  and scores comparably across runs and models
-  (`OLLAMA_MODEL=… npm run check:tool-choice`); exit 1 on a failed case. Case
-  ids as arguments (`npm run check:tool-choice -- stop-container delete-image`)
-  run only those — a failed case alone, or a long run in halves: the full
-  21-case run keeps the GPU busy for about five minutes, and this machine's WSL
-  has frozen under that (see Verification). The
+  The eval suite (`npm run eval` — Promptfoo, below) runs the cases in
+  `tool-choice-cases.ts` (prompt → expected calls with subset-matched
+  arguments, plus allowed extras; includes no-tool and multi-tool cases)
+  through the real loop, the model each provider entry names and the *real*
+  MCP tool catalog, with one substitution — `CannedResultsToolProvider`
+  answers every call from `canned-platform-tool-results.ts` — so it needs no
+  Docker and scores comparably across runs and models. The
   canned fixtures are typed against the tools' result interfaces
   (`src/mcp/server/interfaces.ts`, plus the service types the image and
   build-agent tools pass through) and serialized by the tools' own
   `renderValueAsToolResultJson`, so a tool whose shape changes breaks the
-  typecheck instead of leaving the check testing a shape that no longer exists;
+  typecheck instead of leaving the suite testing a shape that no longer exists;
   the canned list and stats apply the managed-only default and the filters too,
   and the writers answer as the real ones would against the fixture without
   changing it (a stop reports the container exited, deleting a running container
   gets the daemon's refusal in the daemon's words), so every case starts from
-  the same platform. The check approves every call
+  the same platform. The suite approves every call
   (`auto-approve-tool-call-approver.ts` — nothing executes, the question is the
   choice); its write cases include the refused-delete case, which expects
   `delete_container` and fails on any `stop_container` — the model must ask
-  the person first, not stop on its own.
+  the person first, not stop on its own. The suite is the cases' only runner:
+  the hand-rolled `run-tool-choice-check.ts` (`npm run check:tool-choice`)
+  that ran them first was retired on 2026-09-28 once Promptfoo covered all
+  it did — case selection is `--filter-pattern`, the model a provider entry,
+  the failure exit code Promptfoo's own (100); only its live event printout
+  went, and a failed case is read from the results file instead.
   `npm run ask:ai-agent -- "<question>"` asks one question with the tools executed
   for real (Ctrl+C aborts the run), each destructive call waiting for a y/n on the terminal
   (`terminal-tool-call-approver.ts`, readline; Ctrl+C at the question denies it
@@ -888,9 +888,9 @@ classes; JSX files use `.tsx`).
 - Typecheck: `npm run typecheck` (from `platform-backend/`, `builder-service-backend/`,
   or `frontend/`); `npm run build` from `frontend/` also verifies the bundle. In
   `platform-backend/` it covers two projects: `src/` and `evals/`.
-- AI agent: `npm run check:tool-choice` from `platform-backend/` (needs Ollama up and
-  the `OLLAMA_MODEL` pulled — no Docker; about 7 minutes for the 21 cases on a
-  4B model) after any change to
+- AI agent: `npm run eval` from `platform-backend/` (needs Ollama up and the
+  models the config names pulled — no Docker; about 20 s a case on a 4B
+  model; Promptfoo exits 100 when a case fails) after any change to
   the agent loop, the system prompt, a tool's name/description/schema, or the model.
   On this machine the WSL distro has frozen three times about five minutes into
   continuous inference (Ollama silent, then both 11434 and 2375 time out while

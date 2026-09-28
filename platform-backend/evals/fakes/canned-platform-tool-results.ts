@@ -16,13 +16,13 @@ import type { ImageDetails } from '../../src/services/docker/interfaces.ts';
 /**
  * Fixed tool results describing a small made-up platform — four containers
  * (one of them, grafana, not the platform's), two images, two finished build
- * jobs, one build agent. The tool-choice check answers every call from here,
+ * jobs, one build agent. The eval suite answers every call from here,
  * so it needs no Docker daemon and scores the same on every machine.
  *
  * The fixtures are typed against the tools' own result interfaces and
  * serialized by the tools' own JSON renderer: a change to what a tool returns
  * reaches this file as a type error, and a change to how results are rendered
- * reaches it by itself — so the check can never quietly test a shape that no
+ * reaches it by itself — so the suite can never quietly test a shape that no
  * longer exists. The list and stats fixtures also apply the tools' managed-only
  * default and filters, so a case that expects a filter gets an answer the
  * model can reconcile with its question. The tools that change something

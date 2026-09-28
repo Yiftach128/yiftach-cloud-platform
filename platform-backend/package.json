@@ -12,7 +12,6 @@
     "build": "tsc",
     "serve": "node dist/server.js",
     "typecheck": "tsc --noEmit && tsc --noEmit -p evals",
-    "check:tool-choice": "node evals/run-tool-choice-check.ts",
     "ask:ai-agent": "node evals/ask-ai-agent.ts",
     "replay:model-call": "node evals/replay-recorded-model-call.ts",
     "eval": "promptfoo eval -c evals/promptfoo/promptfoo-config.yaml",

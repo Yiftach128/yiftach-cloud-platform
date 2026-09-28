@@ -2,7 +2,7 @@
  * Entry point for asking the AI agent one question from a terminal
  * (`npm run ask:ai-agent -- "which containers are running?"`).
  *
- * Unlike the tool-choice check this runs the tools for real, against the Docker
+ * Unlike the eval suite this runs the tools for real, against the Docker
  * daemon at DOCKER_HOST — the whole chain the chat endpoint uses, minus
  * HTTP. It never boots the daemon: with Docker down, the tools report that in
  * band and the model says so. A destructive tool call waits for a y/n on the

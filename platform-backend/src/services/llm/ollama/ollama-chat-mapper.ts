@@ -9,7 +9,7 @@ import type { LlmChatRequest, LlmMessage, LlmToolCall, LlmToolDefinition } from 
 /**
  * Sampling temperature. Zero on purpose: this assistant picks tools and reports
  * facts, so the same question should take the same path every time — which is
- * also what makes tool-choice checks reproducible.
+ * also what makes the tool-choice evals reproducible.
  */
 const TEMPERATURE = 0;
 

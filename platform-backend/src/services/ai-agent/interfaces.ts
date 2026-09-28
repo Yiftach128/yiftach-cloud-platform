@@ -78,7 +78,7 @@ export interface ToolCallApprovalAnswer {
  * Who decides whether a destructive tool call may run — declared
  * here, implemented by the host: the chat service asks the person in the chat
  * (`ToolCallApprovalGate`), a terminal script asks on the terminal, the
- * tool-choice check approves everything since nothing there executes. The
+ * eval suite approves everything since nothing there executes. The
  * loop asks once per call, one call at a time, before the call runs.
  */
 export interface ToolCallApprover {
