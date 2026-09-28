@@ -414,9 +414,15 @@ Server-Sent Events stream.
   `tsconfig.json` deliberately keeps building `src/` alone, so `dist/` keeps its
   layout. The scripts build their own services with the do-nothing
   `ExternalDockerDaemon`, so a script never boots or holds the WSL distro.
-  The eval suite (`npm run eval` — Promptfoo, below) runs the cases in
-  `tool-choice-cases.ts` (prompt → expected calls with subset-matched
-  arguments, plus allowed extras; includes no-tool and multi-tool cases)
+  The eval suite (`npm run eval` — Promptfoo, below) runs the cases —
+  `cases/tool-choice-cases.ts`, one category file after another
+  (`reader-cases.ts`, `no-tool-cases.ts`, `writer-cases.ts`,
+  `follow-up-cases.ts`, `error-handling-cases.ts`, `safety-cases.ts`; the
+  order and the headings in `tool-choice-case-categories.ts`); a case is a
+  prompt, the calls that must happen (arguments as a structural subset:
+  listed keys only, arrays element by element, scalars as text, so
+  `create-container` is held to its ports) plus the tools allowed on top,
+  and optionally a `reply` expectation and a `rubric`, below —
   through the real loop, the model each provider entry names and the *real*
   MCP tool catalog, with one substitution — `CannedResultsToolProvider`
   answers every call from `canned-platform-tool-results.ts` — so it needs no
@@ -446,12 +452,34 @@ Server-Sent Events stream.
   and re-raises SIGINT so the run aborts) — the chat's Approve/Deny in terminal
   form. A build it starts only sits in the script's own queue, which no builder
   polls: a real build test goes through the UI. The case list is plain data on
-  purpose: the later eval harness loads it rather than replacing it. A case may
+  purpose: the harness loads it rather than owning it. The category is a
+  field on the case — data the table and a filter read; the file mirrors
+  it, and loading the list throws on a mismatch or a repeated id — and
+  names what the case probes, not the tool it ends in: a follow-up that
+  ends in a stop is a follow-up case, a stop of a container that does not
+  exist is error handling. A case may
   carry `precedingTurns` — the conversation its prompt continues, as a chat
   trace records it — so a failed chat becomes a regression case
   (`stop-container-named-in-earlier-turn`: "Is nginx-web running?", the
   assistant's answer, then "Stop it."; the reply in the chat had claimed the
-  stop without calling anything).
+  stop without calling anything). **Reply expectations** (`ReplyExpectation`,
+  scored by `scoring/score-reply-expectation.ts`): `mustMention` fragments —
+  each a string, or a list of alternatives of which one must appear — and
+  `mustNotMention` phrases, matched case-insensitively in the reply as
+  written. The fragments are values the tool results carry (the figure, the
+  error line, the name), which a right answer has to repeat, not the model's
+  wording; the negatives are the claims a wrong answer makes ("has been
+  deleted" after a refused delete) — the check that catches an action
+  reported but never run. Deterministic and free. A model-graded judge was
+  weighed for paraphrase (Promptfoo's `llm-rubric`; its default grader is
+  an OpenAI model, key from the environment) and left for later as a
+  *hosted* grader — a local 4B judge was declined: the GPU holds one model,
+  and it would be as fallible as the judged. It will be a config entry, not
+  code: every row already carries its case's `rubric` (or
+  `cases/default-reply-rubric.ts`) as a var. The reply checks found their
+  first defect the day they landed: `build-agents-online` had the model call
+  the idle agent offline, because the fixture's heartbeat was days behind
+  the prompt's "now" — the canned agent's times are now taken at the call.
   `npm run replay:model-call -- chat-traces/<file>.jsonl [n] [--current-prompt]`
   (`replay-recorded-model-call.ts`) re-sends one model call of a chat trace —
   the last by default, the one that produced the answer — to the configured
@@ -467,8 +495,11 @@ Server-Sent Events stream.
   **Layout:** the root holds the entry points, their console helpers
   (`print-agent-event-to-terminal.ts`, `terminal-tool-call-approver.ts`) and
   the one shared wiring file (`connect-platform-tool-provider-for-evals.ts`);
-  `cases/` is the case data and its types, `scoring/` the judges
-  (`score-tool-choice-case.ts`, shared by both runners), `fakes/` the stand-ins
+  `cases/` is the case data (one file per category, the list file, the
+  category list, the default rubric) and its types, `scoring/` the two
+  judges (`score-tool-choice-case.ts`, `score-reply-expectation.ts`; the
+  Promptfoo assertions delegate to them, so the matching rules live outside
+  the harness), `fakes/` the stand-ins
   for what the agent talks to (the canned platform, the tool provider that
   serves the real catalog but answers from it, the approver that always says
   yes), `promptfoo/` the eval harness and `results/` its committed runs and
@@ -481,10 +512,14 @@ Server-Sent Events stream.
   output, the executed tool calls travel in `metadata`, the MCP link is
   closed in `cleanup`), the tests loaded from
   `promptfoo-tests-from-tool-choice-cases.ts` (the same case list; the case
-  id is the description, so `--filter-pattern` selects by id; earlier turns
-  and expectations ride as vars with expansion off), every row scored by
-  `assert-tool-choice.ts` (a `javascript` assertion delegating to the
-  scorer), concurrency 1 for the one GPU. Promptfoo imports the `.ts` files
+  id is the description, so `--filter-pattern` selects by id and the
+  assertions find the case by it through `read-tool-choice-case-of-row.ts`
+  — the expectations are not vars; the prompt, the earlier turns and the
+  rubric are, with expansion off), every row scored by two `javascript`
+  assertions delegating to the scorers — `assert-tool-choice.ts` (the calls)
+  and `assert-reply-expectation.ts` (the text; a case without a reply
+  expectation passes it) — and passing only when both do, concurrency 1 for
+  the one GPU. Promptfoo imports the `.ts` files
   through `tsx`; its database, cache and logs live under `~/.promptfoo`,
   nothing in the repo; `npm run eval:view` opens its viewer;
   `PROMPTFOO_DISABLE_TELEMETRY=1` keeps its usage pings off. **Every run records
@@ -498,20 +533,34 @@ Server-Sent Events stream.
   rerun changes cells, never adds files (a per-run file was the first shape,
   dropped because every partial run added a superseded file). A row whose
   provider failed before a run (the model server unreachable) is skipped, not
-  recorded as a verdict. Each verdict is the run distilled — passed, reasons,
+  recorded as a verdict — told apart by Promptfoo's `failureReason`, not its
+  `error` field, which a failed assertion sets too (learned the day the first
+  assertion failed: two real failures were skipped as provider errors). Each
+  verdict is the run distilled — passed, reasons,
   tool calls, reply text, prompt size, latency; about 1 KB a case, where
   Promptfoo's own output is about 10 KB a row and stays in `~/.promptfoo`,
   reachable by that eval id. The hook then regenerates
   `evals/results/README.md` through `render-eval-results-table.ts`: cases
-  down, models across, pass count, peak prompt tokens, median latency, last
-  recorded, a failures list; `npm run eval:table`
+  down under their category headings, models across, each cell the verdict,
+  the tool calls made and the seconds (`✅ 1 · 15 s` — a model that lists
+  first every time reads differently from one that answers in one call),
+  then pass count, peak prompt tokens, median latency, median model calls,
+  last recorded, a failures list; `npm run eval:table`
   (`regenerate-eval-results-table.ts`) rebuilds it by hand. Both are
-  committed: the model files are the evidence, the table the summary. Runs
-  on this machine go in batches of about six cases (`--filter-pattern` on the
-  case ids): an eleven-case run hit the WSL freeze at five minutes, sixes
-  never did, and the merge makes the batching free.
-  `check:tool-choice` stays as the Docker-free fast path until the suite
-  covers it.
+  committed: the model files are the evidence, the table the summary. **The
+  suite pauses 30 s between cases** (`evaluateOptions.delay`), because on
+  this machine continuous inference froze the WSL distro at about five
+  minutes, every time (Ollama and Docker silent, `wsl -l -v` still Running,
+  only `wsl --shutdown` recovers — the two-year-old NVIDIA driver, 560.94,
+  is the prime suspect; the WSL kernel is current and Windows logged no
+  driver fault). Before the pause the suite ran in hand-made batches of
+  about six cases, a few minutes apart (`--filter-pattern` on the case ids;
+  the merge made that free), and even those froze when run back to back.
+  With the pause a 26-case run went 14 minutes without freezing, though
+  Ollama still stalled for three consecutive cases mid-run (provider errors,
+  skipped by the recorder, rerun after) — a stall the pause softens rather
+  than removes. A row that errors is simply rerun: a provider error is never
+  recorded as a verdict.
 - `src/services/docker/` — the daemon-facing services. `DockerManagerService` is the
   typed facade for container operations (list/inspect/create/start/stop/logs/delete);
   `DockerImageService` owns image acquisition and lifecycle (exists-check, registry
@@ -895,8 +944,12 @@ classes; JSX files use `.tsx`).
   On this machine the WSL distro has frozen three times about five minutes into
   continuous inference (Ollama silent, then both 11434 and 2375 time out while
   `wsl -l` still says Running; only `wsl --shutdown` recovers it) — run the
-  check in halves by case id until the cause (GPU thermal/driver or WSL) is
-  found, and stop the compose `ollama` first so one model owns the GPU;
+  suite with its 30 s pause between cases (in the config; a 26-case run took
+  14 minutes and did not freeze) and rerun any row whose provider errored
+  (`npm run eval -- --no-cache --filter-pattern '^(id|id|…)$'`; the results
+  merge, see `evals/`) until the cause (the 2024 NVIDIA driver, thermal, or
+  WSL) is found, and stop the compose `ollama` first so one model owns the
+  GPU;
   `npm run ask:ai-agent -- "<question>"` for a live run against the real daemon
   (a destructive call waits for `y`/`N` on the terminal; `echo y | npm run ask:ai-agent -- …`
   scripts the answer).

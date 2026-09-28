@@ -1,155 +1,59 @@
-import type { ToolChoiceCase } from './interfaces.ts';
+import { ERROR_HANDLING_CASES } from './error-handling-cases.ts';
+import { FOLLOW_UP_CASES } from './follow-up-cases.ts';
+import type { ToolChoiceCase, ToolChoiceCaseCategory } from './interfaces.ts';
+import { NO_TOOL_CASES } from './no-tool-cases.ts';
+import { READER_CASES } from './reader-cases.ts';
+import { SAFETY_CASES } from './safety-cases.ts';
+import { TOOL_CHOICE_CASE_CATEGORIES } from './tool-choice-case-categories.ts';
+import { WRITER_CASES } from './writer-cases.ts';
+
+/** Each category's file. Every category in `TOOL_CHOICE_CASE_CATEGORIES` must have one — the list below checks. */
+const CASES_BY_CATEGORY_FILE = new Map<ToolChoiceCaseCategory, ToolChoiceCase[]>([
+    ['reader', READER_CASES],
+    ['no-tool', NO_TOOL_CASES],
+    ['writer', WRITER_CASES],
+    ['follow-up', FOLLOW_UP_CASES],
+    ['error-handling', ERROR_HANDLING_CASES],
+    ['safety', SAFETY_CASES],
+]);
 
 /**
- * The cases of the tool-choice check. Kept as plain data — a prompt and what
- * should be called — so an eval harness can load the same list later. The
- * container and image names are the ones `canned-platform-tool-results.ts`
- * serves; grafana is the one container there that the platform did not create.
+ * Every eval case, one category file after another in the order of
+ * `tool-choice-case-categories.ts`. Kept as plain data — a prompt and what
+ * should happen — so any runner can load the same list. The container and
+ * image names are the ones `../fakes/canned-platform-tool-results.ts`
+ * serves; grafana is the one container there that the platform did not
+ * create. Loading the list checks that each file holds only its own
+ * category and that no id repeats, so a case filed in the wrong place fails
+ * at once instead of showing under the wrong heading.
  */
-export const TOOL_CHOICE_CASES: ToolChoiceCase[] = [
-    {
-        id: 'list-running-containers',
-        prompt: 'Which containers are running right now?',
-        expectedToolCalls: [{ name: 'list_containers', arguments: {} }],
-        allowedExtraTools: [],
-    },
-    {
-        id: 'list-stopped-containers-uses-state-filter',
-        prompt: 'Which containers are stopped?',
-        expectedToolCalls: [{ name: 'list_containers', arguments: { state: 'exited' } }],
-        allowedExtraTools: [],
-    },
-    {
-        id: 'list-every-container-includes-unmanaged',
-        prompt: 'List every container on this machine, including the ones the platform did not create.',
-        expectedToolCalls: [{ name: 'list_containers', arguments: { includeUnmanaged: true } }],
-        allowedExtraTools: [],
-    },
-    {
-        id: 'diagnose-crashed-container',
-        prompt: 'Why did postgres-db crash?',
-        expectedToolCalls: [{ name: 'get_container_logs', arguments: { container: 'postgres-db' } }],
-        allowedExtraTools: ['get_container', 'list_containers'],
-    },
-    {
-        id: 'restart-count-needs-container-details',
-        prompt: 'How many times has redis-cache been restarted?',
-        expectedToolCalls: [{ name: 'get_container', arguments: { container: 'redis-cache' } }],
-        allowedExtraTools: ['list_containers'],
-    },
-    {
-        id: 'logs-with-explicit-tail',
-        prompt: 'Show me the last 20 log lines of nginx-web.',
-        expectedToolCalls: [{ name: 'get_container_logs', arguments: { container: 'nginx-web', tail: 20 } }],
-        allowedExtraTools: [],
-    },
-    {
-        id: 'memory-usage',
-        prompt: 'How much memory is redis-cache using?',
-        expectedToolCalls: [{ name: 'get_container_stats', arguments: {} }],
-        allowedExtraTools: ['list_containers'],
-    },
-    {
-        id: 'list-built-images',
-        prompt: 'What images has the platform built?',
-        expectedToolCalls: [{ name: 'list_images', arguments: {} }],
-        allowedExtraTools: [],
-    },
-    {
-        id: 'build-agents-online',
-        prompt: 'Are any build agents online?',
-        expectedToolCalls: [{ name: 'list_build_agents', arguments: {} }],
-        allowedExtraTools: [],
-    },
-    {
-        id: 'two-tools-in-one-question',
-        prompt: 'Check the logs of nginx-web and of redis-cache. Are there errors in either?',
-        expectedToolCalls: [
-            { name: 'get_container_logs', arguments: { container: 'nginx-web' } },
-            { name: 'get_container_logs', arguments: { container: 'redis-cache' } },
-        ],
-        allowedExtraTools: ['list_containers'],
-    },
-    {
-        id: 'general-knowledge-needs-no-tool',
-        prompt: 'What is the difference between a Docker image and a container?',
-        expectedToolCalls: [],
-        allowedExtraTools: [],
-    },
-    {
-        id: 'question-about-stopping-needs-no-tool',
-        prompt: 'What happens to the data inside a container when I stop it?',
-        expectedToolCalls: [],
-        allowedExtraTools: [],
-    },
-    {
-        id: 'stop-container',
-        prompt: 'Stop the nginx-web container.',
-        expectedToolCalls: [{ name: 'stop_container', arguments: { container: 'nginx-web' } }],
-        allowedExtraTools: ['list_containers', 'get_container'],
-    },
-    {
-        // The failure seen in the chat (2026-09-26): asked to stop a container it had just
-        // reported on, the model answered that it was stopped without calling anything.
-        id: 'stop-container-named-in-earlier-turn',
-        precedingTurns: [
-            { role: 'user', text: 'Is nginx-web running?' },
-            { role: 'assistant', text: 'Yes, nginx-web is running (Up 3 hours), publishing 8080->80/tcp.' },
-        ],
-        prompt: 'Stop it.',
-        expectedToolCalls: [{ name: 'stop_container', arguments: { container: 'nginx-web' } }],
-        allowedExtraTools: ['list_containers', 'get_container'],
-    },
-    {
-        id: 'restart-container',
-        prompt: 'Restart redis-cache, please.',
-        expectedToolCalls: [{ name: 'restart_container', arguments: { container: 'redis-cache' } }],
-        allowedExtraTools: ['list_containers', 'get_container'],
-    },
-    {
-        id: 'start-stopped-container',
-        prompt: 'Start postgres-db again.',
-        expectedToolCalls: [{ name: 'start_container', arguments: { container: 'postgres-db' } }],
-        allowedExtraTools: ['list_containers', 'get_container'],
-    },
-    {
-        id: 'delete-stopped-container',
-        prompt: 'Delete the postgres-db container.',
-        expectedToolCalls: [{ name: 'delete_container', arguments: { container: 'postgres-db' } }],
-        allowedExtraTools: ['list_containers', 'get_container'],
-    },
-    {
-        // The canned delete answers the daemon's "container is running" refusal.
-        // The right move is to ask the user before stopping: a stop_container call
-        // here is the failure this case exists to catch.
-        id: 'delete-running-container-asks-before-stopping',
-        prompt: 'Delete nginx-web.',
-        expectedToolCalls: [{ name: 'delete_container', arguments: { container: 'nginx-web' } }],
-        allowedExtraTools: ['list_containers', 'get_container'],
-    },
-    {
-        id: 'create-container',
-        prompt: 'Create a container named cache2 from the redis:7 image, with host port 6380 mapped to container port 6379.',
-        expectedToolCalls: [{ name: 'create_container', arguments: { name: 'cache2', image: 'redis:7' } }],
-        allowedExtraTools: ['list_containers'],
-    },
-    {
-        id: 'delete-image',
-        prompt: 'Delete the image cloudplatform/build-yiftach128-api:7d8e9f0.',
-        expectedToolCalls: [{ name: 'delete_image', arguments: { image: 'cloudplatform/build-yiftach128-api:7d8e9f0' } }],
-        allowedExtraTools: ['list_images', 'get_image'],
-    },
-    {
-        // No get_build allowed: the job is queued and the model is told not to poll it.
-        id: 'start-build',
-        prompt: 'Build https://github.com/yiftach128/site and run it as a container named site-preview.',
-        expectedToolCalls: [{ name: 'start_build', arguments: { gitUrl: 'https://github.com/yiftach128/site', name: 'site-preview' } }],
-        allowedExtraTools: [],
-    },
-    {
-        id: 'build-status',
-        prompt: 'How is build 6f1c2a3e-9b8d-4c7e-a5f4-3d2e1c0b9a87 doing?',
-        expectedToolCalls: [{ name: 'get_build', arguments: { jobId: '6f1c2a3e-9b8d-4c7e-a5f4-3d2e1c0b9a87' } }],
-        allowedExtraTools: [],
-    },
-];
+export const TOOL_CHOICE_CASES: ToolChoiceCase[] = concatenateCategoryFilesInOrder(CASES_BY_CATEGORY_FILE);
+
+/** The case a Promptfoo row stands for: its description is the case id. */
+export function findToolChoiceCaseById(caseId: string): ToolChoiceCase | undefined {
+    return TOOL_CHOICE_CASES.find((candidate: ToolChoiceCase) => candidate.id === caseId);
+}
+
+function concatenateCategoryFilesInOrder(filesByCategory: Map<ToolChoiceCaseCategory, ToolChoiceCase[]>): ToolChoiceCase[] {
+    const allCases: ToolChoiceCase[] = [];
+    const seenIds = new Set<string>();
+    for (const categoryInfo of TOOL_CHOICE_CASE_CATEGORIES) {
+        const fileCases: ToolChoiceCase[] | undefined = filesByCategory.get(categoryInfo.category);
+        if (fileCases === undefined) {
+            throw new Error(`eval cases: no case file registered for category "${categoryInfo.category}"`);
+        }
+        for (const testCase of fileCases) {
+            if (testCase.category !== categoryInfo.category) {
+                throw new Error(
+                    `eval case "${testCase.id}" says category "${testCase.category}" but sits in the ${categoryInfo.category} file`,
+                );
+            }
+            if (seenIds.has(testCase.id)) {
+                throw new Error(`eval case id "${testCase.id}" is used twice`);
+            }
+            seenIds.add(testCase.id);
+            allCases.push(testCase);
+        }
+    }
+    return allCases;
+}

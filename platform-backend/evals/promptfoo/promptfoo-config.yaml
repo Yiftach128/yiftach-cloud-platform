@@ -1,10 +1,11 @@
 # The AI assistant's eval suite, run by Promptfoo (`npm run eval` from
 # platform-backend/). Each provider entry is the whole agent on one model
-# (`promptfoo-agent-provider.ts`); the tests are the tool-choice cases
+# (`promptfoo-agent-provider.ts`); the tests are the eval cases
 # (`promptfoo-tests-from-tool-choice-cases.ts`); every row is scored by
-# `assert-tool-choice.ts`. Results: providers across, cases down.
+# `assert-tool-choice.ts` (the calls it made) and `assert-reply-expectation.ts`
+# (what its reply says). Results: providers across, cases down.
 # `file://` paths are relative to this file.
-description: YCP assistant — tool choice, by model
+description: YCP assistant — tool choice and reply, by model
 
 prompts:
     - '{{prompt}}'
@@ -20,20 +21,36 @@ tests: file://promptfoo-tests-from-tool-choice-cases.ts
 
 defaultTest:
     options:
-        # A case's earlier turns and expectations are arrays; without this,
-        # Promptfoo would fan each array out into one test per element.
+        # A case's earlier turns are an array; without this, Promptfoo would
+        # fan the array out into one test per element.
         disableVarExpansion: true
     assert:
         - type: javascript
           value: file://assert-tool-choice.ts
+        - type: javascript
+          value: file://assert-reply-expectation.ts
+        # A model-graded judge is one more entry here, no code change: every
+        # row carries its case's rubric (or the default one) in the `rubric`
+        # var. A hosted grader, not a local one — the GPU holds one model —
+        # with its API key read from the environment, e.g.:
+        #   - type: llm-rubric
+        #     value: '{{rubric}}'
+        #     provider: anthropic:messages:<model>
 
 evaluateOptions:
     # One GPU: two models loading at once would only queue inside Ollama and
     # trip the client's idle watchdog.
     maxConcurrency: 1
+    # A pause between cases, in ms. On this machine the WSL distro froze
+    # (Ollama and Docker silent, `wsl -l -v` still Running) about five minutes
+    # into continuous inference, every time; batches of six run by hand a few
+    # minutes apart never froze. The pause keeps the GPU's duty cycle under
+    # that without the batching, so a whole suite runs unattended.
+    delay: 30000
 
-# After every run, `record-eval-run-results.ts` writes the run into
-# ../results/runs/ (one JSON per model) and regenerates ../results/README.md.
+# After every run, `record-eval-run-results.ts` folds the run into
+# ../results/<model>.json (one merged file per model) and regenerates
+# ../results/README.md.
 # The suffix is the hook name; Promptfoo also looks the export up by it.
 extensions:
     - file://record-eval-run-results.ts:afterAll

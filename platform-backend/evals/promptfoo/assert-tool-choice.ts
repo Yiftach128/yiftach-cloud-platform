@@ -1,35 +1,34 @@
 import type { AssertionValueFunctionContext, GradingResult } from 'promptfoo';
 import type { ExecutedToolCall } from '../../src/services/ai-agent/interfaces.ts';
-import type { ExpectedToolCall, ToolChoiceCase } from '../cases/interfaces.ts';
-import type { ToolChoiceCaseScore } from '../scoring/interfaces.ts';
+import type { ToolChoiceCase } from '../cases/interfaces.ts';
+import type { CaseScore } from '../scoring/interfaces.ts';
 import { scoreToolChoiceCase } from '../scoring/score-tool-choice-case.ts';
+import { readToolChoiceCaseOfRow } from './read-tool-choice-case-of-row.ts';
 
 /**
- * The Promptfoo assertion of a tool-choice row (`type: javascript`, `value:
- * file://assert-tool-choice.ts` in `promptfoo-config.yaml`). Promptfoo hands it
- * the reply text and a context; the reply text is not what a tool-choice case
- * judges, so it reads the executed tool calls the agent provider put in
- * `metadata` and the case's expectations from the row's vars, and scores them
- * with the same `scoreToolChoiceCase` the terminal check uses — one set of
- * matching rules, two runners.
+ * The Promptfoo assertion of a row's tool choice (`type: javascript`, `value:
+ * file://assert-tool-choice.ts` in `promptfoo-config.yaml`). Promptfoo hands
+ * it the reply text and a context; the calls, not the text, are what this
+ * one judges, so it reads the executed tool calls the agent provider put in
+ * `metadata`, finds the row's case by its description, and scores them with
+ * `scoreToolChoiceCase` from `../scoring/`, so the matching rules live once,
+ * outside Promptfoo. `assert-reply-expectation.ts` is its counterpart for
+ * the text.
  */
 export default function assertToolChoice(_output: string, context: AssertionValueFunctionContext): GradingResult {
     const toolCalls: ExecutedToolCall[] | undefined = readExecutedToolCalls(context.metadata);
     if (toolCalls === undefined) {
         return { pass: false, score: 0, reason: 'the provider returned no toolCalls metadata — is it the agent provider?' };
     }
-    const testCase: ToolChoiceCase = readToolChoiceCaseFromVars(context.vars, context.test.description);
-    const score: ToolChoiceCaseScore = scoreToolChoiceCase(testCase, toolCalls);
-    let reason: string;
-    let value: number;
-    if (score.passed) {
-        reason = `called ${describeCalls(toolCalls)}`;
-        value = 1;
-    } else {
-        reason = score.problems.join('; ');
-        value = 0;
+    const testCase: ToolChoiceCase | undefined = readToolChoiceCaseOfRow(context);
+    if (testCase === undefined) {
+        return { pass: false, score: 0, reason: `no eval case with id ${JSON.stringify(context.test.description)}` };
     }
-    return { pass: score.passed, score: value, reason: reason };
+    const score: CaseScore = scoreToolChoiceCase(testCase, toolCalls);
+    if (score.passed) {
+        return { pass: true, score: 1, reason: `called ${describeCalls(toolCalls)}` };
+    }
+    return { pass: false, score: 0, reason: score.problems.join('; ') };
 }
 
 function readExecutedToolCalls(metadata: Record<string, unknown> | undefined): ExecutedToolCall[] | undefined {
@@ -41,29 +40,6 @@ function readExecutedToolCalls(metadata: Record<string, unknown> | undefined): E
         return undefined;
     }
     return toolCalls as ExecutedToolCall[];
-}
-
-/** The row's vars carry the case as `promptfoo-tests-from-tool-choice-cases.ts` laid it out. */
-function readToolChoiceCaseFromVars(vars: Record<string, unknown>, description: string | undefined): ToolChoiceCase {
-    let expectedToolCalls: ExpectedToolCall[];
-    if (Array.isArray(vars.expectedToolCalls)) {
-        expectedToolCalls = vars.expectedToolCalls as ExpectedToolCall[];
-    } else {
-        expectedToolCalls = [];
-    }
-    let allowedExtraTools: string[];
-    if (Array.isArray(vars.allowedExtraTools)) {
-        allowedExtraTools = vars.allowedExtraTools as string[];
-    } else {
-        allowedExtraTools = [];
-    }
-    let id: string;
-    if (description === undefined) {
-        id = '(no description)';
-    } else {
-        id = description;
-    }
-    return { id: id, prompt: String(vars.prompt), expectedToolCalls: expectedToolCalls, allowedExtraTools: allowedExtraTools };
 }
 
 function describeCalls(toolCalls: ExecutedToolCall[]): string {

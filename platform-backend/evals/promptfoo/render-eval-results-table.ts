@@ -1,7 +1,8 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { ToolChoiceCase } from '../cases/interfaces.ts';
+import type { ToolChoiceCase, ToolChoiceCaseCategory } from '../cases/interfaces.ts';
+import { TOOL_CHOICE_CASE_CATEGORIES } from '../cases/tool-choice-case-categories.ts';
 import { TOOL_CHOICE_CASES } from '../cases/tool-choice-cases.ts';
 import type { EvalCaseRecord, EvalModelResults } from './interfaces.ts';
 
@@ -13,24 +14,21 @@ export function toModelResultsFileName(model: string): string {
     return `${model.replace(/[:/\\]/g, '-')}.json`;
 }
 
-/** The case list's own order first (readers, then writers), then any recorded id the list no longer has, alphabetically. */
+/** The case list's own order first (category by category), then any recorded id the list no longer has, alphabetically. */
 export function orderCaseIds(caseIds: Iterable<string>): string[] {
     const recordedIds = new Set<string>(caseIds);
     const ordered: string[] = TOOL_CHOICE_CASES
         .map((testCase: ToolChoiceCase) => testCase.id)
         .filter((caseId: string) => recordedIds.has(caseId));
-    const knownIds = new Set<string>(ordered);
-    const unknownIds: string[] = Array.from(recordedIds).filter((caseId: string) => !knownIds.has(caseId));
-    unknownIds.sort();
-    return ordered.concat(unknownIds);
+    return ordered.concat(unlistedCaseIds(recordedIds));
 }
 
 /**
  * Regenerates `README.md` in the results folder from every model file in it:
- * cases down, models across, each cell that model's newest verdict for the
- * case (the model files already hold only the newest — see
- * `record-eval-run-results.ts`). Called by the results hook after every run,
- * and by `npm run eval:table`.
+ * cases down, grouped under their category headings, models across, each
+ * cell that model's newest verdict for the case (the model files already
+ * hold only the newest — see `record-eval-run-results.ts`). Called by the
+ * results hook after every run, and by `npm run eval:table`.
  */
 export function renderEvalResultsTable(resultsDir: string): void {
     const models: EvalModelResults[] = readModelResults(resultsDir);
@@ -68,29 +66,46 @@ export function buildEvalResultsTableMarkdown(models: EvalModelResults[]): strin
         return lines.join('\n');
     }
 
-    const caseIds: string[] = orderCaseIds(collectCaseIds(models));
+    const recordedIds: Set<string> = collectCaseIds(models);
     const casesById: Map<string, EvalCaseRecord>[] = models.map(indexCasesById);
+    const emptyCells: string = models.map(() => '').join(' | ');
 
-    lines.push('Each cell is the newest recorded verdict for that case and model: a run records only the cases');
-    lines.push('it ran, so a suite run in halves, or one case rerun after a fix, updates cells and never adds');
-    lines.push('files. `—` means the case has never run on that model. Each verdict carries the time and the');
-    lines.push('Promptfoo eval id it came from in the model file.');
+    lines.push('Each cell is the newest recorded verdict for that case and model — ✅ or ❌, then the tool calls');
+    lines.push('the run made and its seconds, so a model that answers in one call reads differently from one');
+    lines.push('that lists first every time. A case passes only when its tool choice and its reply both do. A');
+    lines.push('run records only the cases it ran, so a suite run in batches, or one case rerun after a fix,');
+    lines.push('updates cells and never adds files. `—` means the case has never run on that model. Each');
+    lines.push('verdict carries the time and the Promptfoo eval id it came from in the model file.');
     lines.push('');
     lines.push(`| Case | ${models.map((model: EvalModelResults) => model.provider.label).join(' | ')} |`);
     lines.push(`| --- | ${models.map(() => ':---:').join(' | ')} |`);
-    for (const caseId of caseIds) {
-        const cells: string[] = casesById.map((byId: Map<string, EvalCaseRecord>) => toVerdictCell(byId.get(caseId)));
-        lines.push(`| ${caseId} | ${cells.join(' | ')} |`);
+    for (const categoryInfo of TOOL_CHOICE_CASE_CATEGORIES) {
+        const caseIds: string[] = caseIdsOfCategory(categoryInfo.category, recordedIds);
+        if (caseIds.length === 0) {
+            continue;
+        }
+        lines.push(`| **${categoryInfo.title}** — ${categoryInfo.description} | ${emptyCells} |`);
+        for (const caseId of caseIds) {
+            lines.push(`| ${caseId} | ${toVerdictCells(caseId, casesById)} |`);
+        }
+    }
+    const unlistedIds: string[] = unlistedCaseIds(recordedIds);
+    if (unlistedIds.length > 0) {
+        lines.push(`| **Unlisted** — recorded under an id the case list no longer has | ${emptyCells} |`);
+        for (const caseId of unlistedIds) {
+            lines.push(`| ${caseId} | ${toVerdictCells(caseId, casesById)} |`);
+        }
     }
     lines.push(`| **Passed** | ${models.map((model: EvalModelResults) => `**${toPassedSummary(model)}**`).join(' | ')} |`);
     lines.push(`| Peak prompt tokens | ${models.map(toPeakPromptTokens).join(' | ')} |`);
     lines.push(`| Median latency | ${models.map(toMedianLatency).join(' | ')} |`);
+    lines.push(`| Median model calls | ${models.map(toMedianModelCalls).join(' | ')} |`);
     lines.push(`| Last recorded (UTC) | ${models.map(toLastRecorded).join(' | ')} |`);
     lines.push('');
     lines.push('Models: ' + models.map((model: EvalModelResults) => `**${model.provider.label}** = \`${model.provider.llm}\` \`${model.provider.model}\``).join('; ') + '.');
     lines.push('');
 
-    const failureLines: string[] = collectFailureLines(models, caseIds);
+    const failureLines: string[] = collectFailureLines(models, orderCaseIds(recordedIds));
     if (failureLines.length > 0) {
         lines.push('## Failures');
         lines.push('');
@@ -118,14 +133,37 @@ function indexCasesById(model: EvalModelResults): Map<string, EvalCaseRecord> {
     return byId;
 }
 
+/** The recorded cases of one category, in the case list's order. */
+function caseIdsOfCategory(category: ToolChoiceCaseCategory, recordedIds: Set<string>): string[] {
+    return TOOL_CHOICE_CASES
+        .filter((testCase: ToolChoiceCase) => testCase.category === category && recordedIds.has(testCase.id))
+        .map((testCase: ToolChoiceCase) => testCase.id);
+}
+
+/** Recorded ids the case list no longer has (a case renamed or dropped), alphabetically. */
+function unlistedCaseIds(recordedIds: Set<string>): string[] {
+    const listedIds = new Set<string>(TOOL_CHOICE_CASES.map((testCase: ToolChoiceCase) => testCase.id));
+    const unlisted: string[] = Array.from(recordedIds).filter((caseId: string) => !listedIds.has(caseId));
+    unlisted.sort();
+    return unlisted;
+}
+
+function toVerdictCells(caseId: string, casesById: Map<string, EvalCaseRecord>[]): string {
+    return casesById.map((byId: Map<string, EvalCaseRecord>) => toVerdictCell(byId.get(caseId))).join(' | ');
+}
+
+/** `✅ 1 · 15 s` — the verdict, the tool calls the run made, the seconds it took. */
 function toVerdictCell(testCase: EvalCaseRecord | undefined): string {
     if (testCase === undefined) {
         return '—';
     }
+    let mark: string;
     if (testCase.passed) {
-        return '✅';
+        mark = '✅';
+    } else {
+        mark = '❌';
     }
-    return '❌';
+    return `${mark} ${testCase.toolCalls.length} · ${(testCase.latencyMs / 1000).toFixed(0)} s`;
 }
 
 function toPassedSummary(model: EvalModelResults): string {
@@ -145,14 +183,25 @@ function toPeakPromptTokens(model: EvalModelResults): string {
 }
 
 function toMedianLatency(model: EvalModelResults): string {
-    const latencies: number[] = model.cases
-        .map((testCase: EvalCaseRecord) => testCase.latencyMs)
-        .sort((a: number, b: number) => a - b);
-    const middle: number | undefined = latencies[Math.floor(latencies.length / 2)];
-    if (middle === undefined) {
+    const median: number | undefined = medianOf(model.cases.map((testCase: EvalCaseRecord) => testCase.latencyMs));
+    if (median === undefined) {
         return '—';
     }
-    return `${(middle / 1000).toFixed(1)} s`;
+    return `${(median / 1000).toFixed(1)} s`;
+}
+
+function toMedianModelCalls(model: EvalModelResults): string {
+    const median: number | undefined = medianOf(model.cases.map((testCase: EvalCaseRecord) => testCase.modelCalls));
+    if (median === undefined) {
+        return '—';
+    }
+    return String(median);
+}
+
+/** The upper median (the middle element of the sorted values, the later one of two); none for no values. */
+function medianOf(values: number[]): number | undefined {
+    const sorted: number[] = values.slice().sort((a: number, b: number) => a - b);
+    return sorted[Math.floor(sorted.length / 2)];
 }
 
 /** The newest `recordedAt` among the model's verdicts, to the minute. */
@@ -169,7 +218,7 @@ function toLastRecorded(model: EvalModelResults): string {
     return newest.replace('T', ' ').replace(/:\d{2}\.\d{3}Z$/, '');
 }
 
-/** One bullet per failed cell: the model, the case, and the assertion's reasons. */
+/** One bullet per failed cell: the model, the case, and the assertions' reasons. */
 function collectFailureLines(models: EvalModelResults[], caseIds: string[]): string[] {
     const lines: string[] = [];
     const casesById: Map<string, EvalCaseRecord>[] = models.map(indexCasesById);

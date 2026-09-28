@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ApiProvider, EvaluateResult } from 'promptfoo';
+import { ResultFailureReason } from 'promptfoo';
 import type { ExecutedToolCall } from '../../src/services/ai-agent/interfaces.ts';
 import type {
     EvalCaseRecord,
@@ -34,10 +35,12 @@ import {
  * its reasons, the tool calls, the reply, the prompt size — small enough to
  * commit after every run.
  *
- * A row whose provider failed (Promptfoo's `error`: the model server was
- * unreachable, the WSL distro froze) is not recorded: no model ran, so it says
- * nothing about the model, and it would replace the last real verdict. It is
- * counted and named on the console instead.
+ * A row whose provider failed (the model server was unreachable, the WSL
+ * distro froze) is not recorded: no model ran, so it says nothing about the
+ * model, and it would replace the last real verdict. It is counted and named
+ * on the console instead. Told apart by Promptfoo's `failureReason`, not by
+ * its `error` field: a failed assertion sets `error` too (to its reason), and
+ * that row is a verdict to keep.
  */
 export async function recordEvalRunResultsAfterAll(context: PromptfooAfterAllHookContext): Promise<void> {
     const erroredRows: EvaluateResult[] = context.results.filter(isProviderErrorRow);
@@ -77,9 +80,9 @@ export async function recordEvalRunResultsAfterAll(context: PromptfooAfterAllHoo
 /** The name Promptfoo resolves from `file://record-eval-run-results.ts:afterAll`. */
 export { recordEvalRunResultsAfterAll as afterAll };
 
-/** Promptfoo sets `error` on a row whose provider threw — here, the model server unreachable — and leaves it unset on an assertion failure. */
+/** `ERROR` is a provider that threw — here, the model server unreachable; `ASSERT` is a verdict, and its `error` field only repeats the reason. */
 function isProviderErrorRow(result: EvaluateResult): boolean {
-    return typeof result.error === 'string' && result.error !== '';
+    return result.failureReason === ResultFailureReason.ERROR;
 }
 
 function describeRow(result: EvaluateResult): string {

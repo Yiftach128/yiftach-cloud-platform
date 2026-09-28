@@ -183,9 +183,18 @@ const IMAGE_DETAILS: ImageDetails[] = [
     },
 ];
 
-const BUILD_AGENTS: BuildAgent[] = [
-    { name: 'builder-1', status: 'idle', startedAt: new Date('2026-09-21T06:12:40.000Z'), lastSeenAt: new Date('2026-09-21T09:30:02.000Z') },
-];
+/**
+ * The one build agent, its times taken at the call rather than fixed like the
+ * rest of the fixture: a model reads a last heartbeat days old as offline,
+ * whatever `status` says, and the fixture's dates are days behind the "now"
+ * of the system prompt.
+ */
+function cannedBuildAgents(): BuildAgent[] {
+    const nowMs: number = Date.now();
+    return [
+        { name: 'builder-1', status: 'idle', startedAt: new Date(nowMs - 3 * 60 * 60 * 1000), lastSeenAt: new Date(nowMs - 8 * 1000) },
+    ];
+}
 
 const BUILD_JOBS: BuildJobToolView[] = [
     {
@@ -273,7 +282,7 @@ export function cannedPlatformToolResult(name: string, toolArguments: Record<str
         return toJsonOutcome(IMAGES);
     }
     if (name === 'list_build_agents') {
-        return toJsonOutcome(BUILD_AGENTS);
+        return toJsonOutcome(cannedBuildAgents());
     }
     if (name === 'get_container') {
         const wanted: string = String(toolArguments.container);
