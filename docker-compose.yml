@@ -84,6 +84,14 @@ services:
         # be switched off per machine and needed an override file of its own.
         runtime: ${OLLAMA_RUNTIME:-}
         restart: unless-stopped
+        environment:
+            # llama-server's prompt cache — the KV state of finished conversations,
+            # kept in host RAM so a returning one restores fast — defaults to an
+            # 8 GiB cap, which under WSL is more than the VM has. Off: the server
+            # runs one slot, whose own KV already keeps the shared prefix. The
+            # native Ollama that `npm run dev` and the evals use sets the same in
+            # its systemd unit.
+            LLAMA_ARG_CACHE_RAM: "0"
         volumes:
             - ollama-models:/root/.ollama
         healthcheck:

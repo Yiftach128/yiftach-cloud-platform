@@ -41,12 +41,12 @@ evaluateOptions:
     # One GPU: two models loading at once would only queue inside Ollama and
     # trip the client's idle watchdog.
     maxConcurrency: 1
-    # A pause between cases, in ms. On this machine the WSL distro froze
-    # (Ollama and Docker silent, `wsl -l -v` still Running) about five minutes
-    # into continuous inference, every time; batches of six run by hand a few
-    # minutes apart never froze. The pause keeps the GPU's duty cycle under
-    # that without the batching, so a whole suite runs unattended.
-    delay: 30000
+    # No pause between cases. For a while there was one (30 s), while
+    # continuous inference seemed to freeze the WSL distro; the cause was
+    # llama-server's prompt cache filling the VM's RAM, switched off with
+    # LLAMA_ARG_CACHE_RAM=0 on the Ollama service (the evals notes in
+    # CLAUDE.md tell the story). `--delay <ms>` on the command line brings a
+    # pause back for one run.
 
 # After every run, `record-eval-run-results.ts` folds the run into
 # ../results/<model>.json (one merged file per model) and regenerates

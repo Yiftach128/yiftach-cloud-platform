@@ -562,19 +562,32 @@ Server-Sent Events stream.
   last recorded, a failures list; `npm run eval:table`
   (`regenerate-eval-results-table.ts`) rebuilds it by hand. Both are
   committed: the model files are the evidence, the table the summary. **The
-  suite pauses 30 s between cases** (`evaluateOptions.delay`), because on
-  this machine continuous inference froze the WSL distro at about five
-  minutes, every time (Ollama and Docker silent, `wsl -l -v` still Running,
-  only `wsl --shutdown` recovers — the two-year-old NVIDIA driver, 560.94,
-  is the prime suspect; the WSL kernel is current and Windows logged no
-  driver fault). Before the pause the suite ran in hand-made batches of
-  about six cases, a few minutes apart (`--filter-pattern` on the case ids;
-  the merge made that free), and even those froze when run back to back.
-  With the pause a 26-case run went 14 minutes without freezing, though
-  Ollama still stalled for three consecutive cases mid-run (provider errors,
-  skipped by the recorder, rerun after) — a stall the pause softens rather
-  than removes. A row that errors is simply rerun: a provider error is never
-  recorded as a verdict.
+  suite runs its cases back to back** (no `evaluateOptions.delay`; about
+  12 minutes for 30 cases). For a while it paused 30 s between cases,
+  because on this machine continuous inference "froze" the WSL distro at
+  about five minutes, every time (Ollama and Docker silent, `wsl -l -v`
+  still Running, only `wsl --shutdown` recovered); the NVIDIA driver was
+  suspected and updated, and the culprit turned out to be host RAM: Ollama
+  spawns the upstream `llama-server` without `--cache-ram`, so llama.cpp's
+  prompt cache — the KV state of each finished conversation, saved to host
+  memory so a returning one restores fast — grows toward its 8 GiB default
+  inside a WSL VM that has 7.7 GB (half the machine). The server runs one
+  slot, so every case, a new conversation, adds about 500 MB; a dozen cases
+  later the VM is swapping (the "freeze") or the kernel OOM-kills the
+  service (seen 2026-09-28: `journalctl -u ollama` shows `oom-kill`,
+  systemd restarts it in 3 s, and the two or three cases in the reload
+  window error with `LlmUnavailableError … other side closed`, which the
+  recorder skips). Hand-made batches of six a few minutes apart never froze
+  because Ollama unloads the model after five idle minutes, which empties
+  the cache. The fix lives in the distro, not the repo: a systemd drop-in on
+  the ollama unit, `[Service] Environment="LLAMA_ARG_CACHE_RAM=0"`
+  (llama-server reads it and logs "prompt cache is disabled"; the cache is
+  worth nothing with one slot, whose own KV already carries the shared
+  system-prompt prefix), verified by a 30-case run with no pause, no
+  errors, and the unit's `MemoryPeak` flat at its post-load 4.3 GB (that
+  figure includes the page cache of the model blob; the growth is what to
+  watch). The compose `ollama` service sets the same variable. A row that
+  errors is simply rerun: a provider error is never recorded as a verdict.
 - `src/services/docker/` — the daemon-facing services. `DockerManagerService` is the
   typed facade for container operations (list/inspect/create/start/stop/logs/delete);
   `DockerImageService` owns image acquisition and lifecycle (exists-check, registry
@@ -955,15 +968,13 @@ classes; JSX files use `.tsx`).
   models the config names pulled — no Docker; about 20 s a case on a 4B
   model; Promptfoo exits 100 when a case fails) after any change to
   the agent loop, the system prompt, a tool's name/description/schema, or the model.
-  On this machine the WSL distro has frozen three times about five minutes into
-  continuous inference (Ollama silent, then both 11434 and 2375 time out while
-  `wsl -l` still says Running; only `wsl --shutdown` recovers it) — run the
-  suite with its 30 s pause between cases (in the config; a 26-case run took
-  14 minutes and did not freeze) and rerun any row whose provider errored
-  (`npm run eval -- --no-cache --filter-pattern '^(id|id|…)$'`; the results
-  merge, see `evals/`) until the cause (the 2024 NVIDIA driver, thermal, or
-  WSL) is found, and stop the compose `ollama` first so one model owns the
-  GPU;
+  Stop the compose `ollama` first so one model owns the GPU. A full run is
+  about 12 minutes. If rows error with `other side closed`, or the distro
+  goes silent under the run, check `journalctl -u ollama` for `oom-kill`
+  before anything else: the native Ollama must carry `LLAMA_ARG_CACHE_RAM=0`
+  (a systemd drop-in in the distro — the story is under `evals/` above), and
+  errored rows are rerun (`npm run eval -- --no-cache --filter-pattern
+  '^(id|id|…)$'`; the results merge, see `evals/`);
   `npm run ask:ai-agent -- "<question>"` for a live run against the real daemon
   (a destructive call waits for `y`/`N` on the terminal; `echo y | npm run ask:ai-agent -- …`
   scripts the answer).
