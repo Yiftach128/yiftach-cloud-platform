@@ -28,8 +28,10 @@ const SERVER_INSTRUCTIONS =
     + 'start a build) are used when the user asks for the change, never on your own initiative; those that '
     + 'stop, restart or delete run only after the user has approved the call. Report only what a result confirms. '
     + 'list_containers and get_container_stats show the containers the platform created; other '
-    + 'containers on the machine are only counted (hiddenUnmanagedCount) unless includeUnmanaged is true. '
-    + 'Container names come from list_containers; image ids from list_images. '
+    + 'containers on the machine are only counted (hiddenUnmanagedCount) unless includeUnmanaged is true — '
+    + 'a container that is missing while that count is above 0 is one of them, so call the tool again with '
+    + 'includeUnmanaged true. Container names come from list_containers, called without a state filter so '
+    + 'a stopped container is found too; image ids from list_images. '
     + 'To diagnose a container, combine get_container (exit code, health, restarts) with get_container_logs. '
     + 'To delete a container call delete_container; Docker refuses while the container is running, and only '
     + 'when the tool reports that refusal tell the user and ask whether to stop it first.';

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { DockerManagerService } from '../../../services/docker/docker-manager-service.ts';
 import type { Container, ContainerStats, ContainerStatsMap } from '../../../services/docker/interfaces.ts';
 import type { ContainerStatsToolResult, ContainerStatsToolRow } from '../interfaces.ts';
+import { describeHiddenUnmanagedContainers } from '../tool-results-utils/describe-hidden-unmanaged-containers.ts';
 import { isPlatformManagedContainer } from '../tool-results-utils/is-platform-managed-container.ts';
 import { runToolWithErrorMapping } from '../tool-results-utils/run-tool-with-error-mapping.ts';
 import { toJsonToolResult } from '../tool-results-utils/tool-result-builders.ts';
@@ -24,10 +25,11 @@ export function registerGetContainerStatsTool(server: McpServer, docker: DockerM
         {
             title: 'Get container resource usage',
             description:
-                'Returns the current CPU and memory usage of the running containers this platform '
-                + 'created. Stopped containers do not appear. Other running containers on the machine '
-                + 'are counted in hiddenUnmanagedCount; set includeUnmanaged to true to include them. '
-                + 'cpuPercent 100 means one full CPU core.',
+                'Returns a CPU and memory sample for each running container this platform created '
+                + '(stopped containers have none). For which containers exist or run, use list_containers; '
+                + 'this tool is for resource usage. Other running containers on the machine are counted in '
+                + 'hiddenUnmanagedCount; a container the user named that is not listed is one of them — '
+                + 'call again with includeUnmanaged true. cpuPercent 100 means one full CPU core.',
             inputSchema: z.object({
                 includeUnmanaged: z.boolean().optional()
                     .describe('true to include containers the platform did not create. Defaults to false.'),
@@ -58,10 +60,15 @@ export function registerGetContainerStatsTool(server: McpServer, docker: DockerM
                     rows.push(toRow(container.name, sample));
                 }
             }
+            const hiddenUnmanagedCount: number = running.length - shown.length;
             const result: ContainerStatsToolResult = {
                 containers: rows,
-                hiddenUnmanagedCount: running.length - shown.length,
+                hiddenUnmanagedCount: hiddenUnmanagedCount,
             };
+            const note: string | undefined = describeHiddenUnmanagedContainers(hiddenUnmanagedCount);
+            if (note !== undefined) {
+                result.hiddenUnmanagedNote = note;
+            }
             return toJsonToolResult(result);
         }),
     );

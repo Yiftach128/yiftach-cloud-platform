@@ -238,7 +238,21 @@ Server-Sent Events stream.
   `get_container_stats` take `includeUnmanaged` (default false, decided by
   `is-platform-managed-container.ts`) and always answer an object with the rows
   plus `hiddenUnmanagedCount`, so a model never reads a filtered list as "nothing
-  is running"; `get_container` and the logs take any container's name.
+  is running" — and, when that count is above 0, a `hiddenUnmanagedNote`
+  (`describe-hidden-unmanaged-containers.ts`) saying so in words and naming
+  the call that includes them, because the count alone did not move a 4B
+  model asked about a compose container: it read the count, guessed the
+  container was unmanaged, and asked the user instead of calling again; a
+  sentence in the tool description did not change that, and a system-prompt
+  rule naming `includeUnmanaged` made it pass `false` on purpose (the eval
+  `memory-usage-of-unmanaged-container`, 2026-09-28). The wording of the two
+  descriptions is eval-tuned as well: the `state` filter says it is usually
+  omitted, because "e.g. running" had the model list running containers only
+  for a health check and for a start, missing the crashed one; the list tool
+  says it is for "which containers exist or run", because without that the
+  running question went to the stats tool; and `list_build_agents` spells
+  out that idle means online, because a reply once called the idle agent
+  offline. `get_container` and the logs take any container's name.
   `createPlatformMcpServer` is a factory, not a shared instance, because an MCP
   server binds to one transport; `McpHttpEndpoint` wraps the SDK's
   `createMcpHandler` (per-request, stateless; serves the 2026-07-28 protocol

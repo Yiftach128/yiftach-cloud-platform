@@ -7,6 +7,7 @@ import type {
     ContainerToolSummary,
     ImageToolSummary,
 } from '../../src/mcp/server/interfaces.ts';
+import { describeHiddenUnmanagedContainers } from '../../src/mcp/server/tool-results-utils/describe-hidden-unmanaged-containers.ts';
 import { renderValueAsToolResultJson } from '../../src/mcp/server/tool-results-utils/tool-result-builders.ts';
 import { toShortImageId } from '../../src/mcp/server/tool-results-utils/tool-result-value-formatters.ts';
 import type { ToolCallOutcome } from '../../src/services/ai-agent/interfaces.ts';
@@ -491,7 +492,7 @@ function selectContainers(toolArguments: Record<string, unknown>): ContainerList
     } else {
         shown = candidates.filter((container: ContainerToolSummary) => container.managed);
     }
-    return { containers: shown, hiddenUnmanagedCount: candidates.length - shown.length };
+    return withHiddenUnmanagedNote({ containers: shown, hiddenUnmanagedCount: candidates.length - shown.length });
 }
 
 /** The stats tool's managed-only default over the fixture. */
@@ -502,7 +503,16 @@ function selectStats(toolArguments: Record<string, unknown>): ContainerStatsTool
     } else {
         shown = STATS.filter((row: ContainerStatsToolRow) => isManagedContainerName(row.name));
     }
-    return { containers: shown, hiddenUnmanagedCount: STATS.length - shown.length };
+    return withHiddenUnmanagedNote({ containers: shown, hiddenUnmanagedCount: STATS.length - shown.length });
+}
+
+/** The note the real list and stats tools add when they left containers out, from their own helper, so the fixture says what they would. */
+function withHiddenUnmanagedNote<T extends { hiddenUnmanagedCount: number; hiddenUnmanagedNote?: string }>(result: T): T {
+    const note: string | undefined = describeHiddenUnmanagedContainers(result.hiddenUnmanagedCount);
+    if (note !== undefined) {
+        result.hiddenUnmanagedNote = note;
+    }
+    return result;
 }
 
 function isManagedContainerName(name: string): boolean {

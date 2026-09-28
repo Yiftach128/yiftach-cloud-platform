@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { DockerManagerService } from '../../../services/docker/docker-manager-service.ts';
 import type { Container, ContainerState, GetContainersOptions } from '../../../services/docker/interfaces.ts';
 import type { ContainerListToolResult, ContainerToolSummary } from '../interfaces.ts';
+import { describeHiddenUnmanagedContainers } from '../tool-results-utils/describe-hidden-unmanaged-containers.ts';
 import { isPlatformManagedContainer } from '../tool-results-utils/is-platform-managed-container.ts';
 import { runToolWithErrorMapping } from '../tool-results-utils/run-tool-with-error-mapping.ts';
 import { toJsonToolResult } from '../tool-results-utils/tool-result-builders.ts';
@@ -26,13 +27,18 @@ export function registerListContainersTool(server: McpServer, docker: DockerMana
         {
             title: 'List containers',
             description:
-                'Lists the containers this platform created: name, image, state, status and published '
-                + 'ports. Other containers on the machine (created with docker or compose) are left out '
-                + 'and counted in hiddenUnmanagedCount; set includeUnmanaged to true to list them too. '
-                + "Start here to find a container's name.",
+                'Lists the containers this platform created, running and stopped alike: name, image, '
+                + 'state, status and published ports. Use it for any question about which containers '
+                + "exist or are running, and to find a container's name. Other containers on the machine "
+                + '(created with docker or compose) are left out and counted in hiddenUnmanagedCount; a '
+                + 'container the user named that is not listed is one of them — call again with '
+                + 'includeUnmanaged true.',
             inputSchema: z.object({
                 state: z.enum(CONTAINER_STATES).optional()
-                    .describe('Only containers in this state, e.g. "running" or "exited". Omit for all states.'),
+                    .describe(
+                        'Only containers in this state, e.g. "exited". Usually omitted: the unfiltered list shows '
+                        + 'every container, running or stopped, which a health check or a name lookup needs.',
+                    ),
                 includeUnmanaged: z.boolean().optional()
                     .describe('true to include containers the platform did not create. Defaults to false.'),
             }),
@@ -59,10 +65,15 @@ export function registerListContainersTool(server: McpServer, docker: DockerMana
             } else {
                 shown = containers.filter(isPlatformManagedContainer);
             }
+            const hiddenUnmanagedCount: number = containers.length - shown.length;
             const result: ContainerListToolResult = {
                 containers: shown.map(toSummary),
-                hiddenUnmanagedCount: containers.length - shown.length,
+                hiddenUnmanagedCount: hiddenUnmanagedCount,
             };
+            const note: string | undefined = describeHiddenUnmanagedContainers(hiddenUnmanagedCount);
+            if (note !== undefined) {
+                result.hiddenUnmanagedNote = note;
+            }
             return toJsonToolResult(result);
         }),
     );

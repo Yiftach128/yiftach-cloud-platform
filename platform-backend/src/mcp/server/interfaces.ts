@@ -74,6 +74,8 @@ export interface ContainerListToolResult {
     containers: ContainerToolSummary[];
     /** Containers the platform did not create that the call left out; 0 when they were included or there are none. */
     hiddenUnmanagedCount: number;
+    /** Present when the count is above 0: the same fact in words, with the call that includes them — in the result, where a model acts on it. */
+    hiddenUnmanagedNote?: string;
 }
 
 /** One `get_container_stats` row: a stats sample joined to its container's name. */
@@ -96,6 +98,8 @@ export interface ContainerStatsToolResult {
     containers: ContainerStatsToolRow[];
     /** Running containers the platform did not create that the call left out; 0 when they were included or there are none. */
     hiddenUnmanagedCount: number;
+    /** Present when the count is above 0: the same fact in words, with the call that includes them — in the result, where a model acts on it. */
+    hiddenUnmanagedNote?: string;
 }
 
 /** The health part of `ContainerToolDetails`: the verdict and the latest probe's output, not the whole probe log. */

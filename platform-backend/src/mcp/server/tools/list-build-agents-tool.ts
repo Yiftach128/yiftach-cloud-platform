@@ -12,8 +12,9 @@ export function registerListBuildAgentsTool(server: McpServer, buildAgents: Buil
             title: 'List build agents',
             description:
                 'Lists the build agents — the builder processes that turn GitHub repositories into '
-                + 'images: status (idle, building or offline), the job being built, start time and '
-                + 'last heartbeat.',
+                + 'images: status, the job being built, start time and last heartbeat. Status idle means '
+                + 'online and waiting for a job, building means online and on a job, offline means no '
+                + 'heartbeat for 30 seconds — an idle agent is online.',
             annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
         },
         async () => runToolWithErrorMapping(async () => {
