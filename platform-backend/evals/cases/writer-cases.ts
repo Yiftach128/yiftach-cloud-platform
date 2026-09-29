@@ -32,10 +32,12 @@ export const WRITER_CASES: ToolChoiceCase[] = [
         reply: { mustMention: ['postgres-db', ['started', 'now running']], mustNotMention: [] },
     },
     {
+        // By name or by the short id a list answered (qwen3.5 lists first and deletes by id),
+        // so the call is held to the tool only; the reply must still name postgres-db.
         id: 'delete-stopped-container',
         category: 'writer',
         prompt: 'Delete the postgres-db container.',
-        expectedToolCalls: [{ name: 'delete_container', arguments: { container: 'postgres-db' } }],
+        expectedToolCalls: [{ name: 'delete_container', arguments: {} }],
         allowedExtraTools: ['list_containers', 'get_container'],
         reply: { mustMention: ['postgres-db', 'deleted'], mustNotMention: [] },
     },

@@ -10,12 +10,55 @@ description: YCP assistant — tool choice and reply, by model
 prompts:
     - '{{prompt}}'
 
+# One entry per column of the results table. Run ONE model per invocation:
+#     npm run eval -- --no-cache --filter-providers granite
+# (a regex on the entry's label or id — pick a part that names one entry:
+# `thinking` alone matches three). With several entries in one run,
+# Promptfoo alternates the providers row by row, which on a card that holds
+# one model is a model swap every case. Two entries of one model differ by a
+# `variant`, which joins the results file name (`<model>+<variant>.json`).
+# The first call of an entry checks that its model is pulled and can call
+# tools, and fails the column with one clear line otherwise.
 providers:
     - id: file://promptfoo-agent-provider.ts
-      label: qwen3 4B instruct
+      label: qwen3 4B, instruct model
       config:
           llm: ollama
           model: qwen3:4b-instruct-2507-q4_K_M
+    # The baseline's sibling, trained to reason before it answers (thinking
+    # only, no switch). The thought shares the window with the prompt, hence
+    # the wider context; at 12288 the KV cache still fits beside the weights on
+    # a 6 GB card.
+    - id: file://promptfoo-agent-provider.ts
+      label: qwen3 4B, thinking model
+      config:
+          llm: ollama
+          model: qwen3:4b-thinking-2507-q4_K_M
+          contextTokens: 12288
+    # The newer generation, a hybrid: thinking off first, like for like with
+    # the baseline, then on.
+    - id: file://promptfoo-agent-provider.ts
+      label: qwen3.5 4B, thinking off
+      config:
+          llm: ollama
+          model: qwen3.5:4b
+          variant: no-think
+          think: false
+    - id: file://promptfoo-agent-provider.ts
+      label: qwen3.5 4B, thinking on
+      config:
+          llm: ollama
+          model: qwen3.5:4b
+          variant: think
+          think: true
+          contextTokens: 12288
+    # A different vendor, smaller than the baseline: whether the tool
+    # descriptions and the prompt, tuned on qwen, hold up outside the family.
+    - id: file://promptfoo-agent-provider.ts
+      label: granite 4.1 3B
+      config:
+          llm: ollama
+          model: granite4.1:3b
 
 tests: file://promptfoo-tests-from-tool-choice-cases.ts
 

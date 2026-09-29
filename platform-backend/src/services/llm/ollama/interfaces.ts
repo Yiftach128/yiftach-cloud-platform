@@ -11,4 +11,12 @@ export interface OllamaLlmClientOptions {
      * not fit is truncated silently rather than refused.
      */
     contextTokens: number;
+    /**
+     * Whether the model reasons before it answers (Ollama's top-level `think`).
+     * Sent only when set; absent, Ollama applies the model's own default (on,
+     * for one that can think). `false` switches it off on a hybrid model such
+     * as qwen3.5; a thinking-only model ignores it, and Ollama refuses `true`
+     * for a model without the thinking capability.
+     */
+    think?: boolean;
 }

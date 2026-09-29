@@ -13,7 +13,7 @@ export function scoreToolChoiceCase(testCase: ToolChoiceCase, executedCalls: Exe
     for (const expected of testCase.expectedToolCalls) {
         const wasCalled: boolean = executedCalls.some((call: ExecutedToolCall) => matchesExpectedCall(call, expected));
         if (!wasCalled) {
-            problems.push(`expected ${expected.name} ${JSON.stringify(expected.arguments)} was not called`);
+            problems.push(`expected ${describeExpectedCall(expected)} was not called`);
         }
     }
 
@@ -28,6 +28,14 @@ export function scoreToolChoiceCase(testCase: ToolChoiceCase, executedCalls: Exe
     }
 
     return { passed: problems.length === 0, problems: problems };
+}
+
+/** `delete_container {"container":"nginx-web"}` — or the name alone when the case holds only the tool. */
+function describeExpectedCall(expected: ExpectedToolCall): string {
+    if (Object.keys(expected.arguments).length === 0) {
+        return expected.name;
+    }
+    return `${expected.name} ${JSON.stringify(expected.arguments)}`;
 }
 
 function matchesExpectedCall(call: ExecutedToolCall, expected: ExpectedToolCall): boolean {

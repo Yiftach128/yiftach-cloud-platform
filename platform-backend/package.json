@@ -16,7 +16,8 @@
     "replay:model-call": "node evals/replay-recorded-model-call.ts",
     "eval": "promptfoo eval -c evals/promptfoo/promptfoo-config.yaml",
     "eval:view": "promptfoo view",
-    "eval:table": "node evals/regenerate-eval-results-table.ts"
+    "eval:table": "node evals/regenerate-eval-results-table.ts",
+    "eval:rescore": "node evals/rescore-recorded-eval-results.ts"
   },
   "devDependencies": {
     "@types/dockerode": "^4.0.1",
@@ -24,7 +25,8 @@
     "@types/node": "^24.10.1",
     "nodemon": "^3.1.14",
     "promptfoo": "^0.123.1",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "yaml": "^2.9.1"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.0.0",

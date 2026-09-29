@@ -42,6 +42,8 @@ export interface OllamaChatRequestBody {
     stream: boolean;
     messages: OllamaMessage[];
     tools?: OllamaTool[];
+    /** Reasoning before the answer. Left out unless the client was configured, so Ollama's per-model default applies. */
+    think?: boolean;
     options: {
         temperature: number;
         num_ctx: number;
@@ -52,6 +54,8 @@ export interface OllamaChatRequestBody {
 export interface OllamaChatChunk {
     message?: {
         content?: unknown;
+        /** A fragment of the model's reasoning, on a thinking model — delivered apart from `content`, never inside it. */
+        thinking?: unknown;
         tool_calls?: unknown;
     };
     done?: boolean;
@@ -67,6 +71,7 @@ export function toOllamaChatRequestBody(
     request: LlmChatRequest,
     model: string,
     contextTokens: number,
+    think: boolean | undefined,
 ): OllamaChatRequestBody {
     const body: OllamaChatRequestBody = {
         model: model,
@@ -80,6 +85,9 @@ export function toOllamaChatRequestBody(
     // Left out rather than sent empty: an absent list is the documented way to offer no tools.
     if (request.tools.length > 0) {
         body.tools = request.tools.map(toOllamaTool);
+    }
+    if (think !== undefined) {
+        body.think = think;
     }
     return body;
 }
@@ -111,6 +119,24 @@ function toOllamaTool(tool: LlmToolDefinition): OllamaTool {
             parameters: tool.inputSchema,
         },
     };
+}
+
+/**
+ * The `capabilities` of an `/api/show` answer — "completion", "tools",
+ * "thinking", "vision" — as Ollama derives them from the model's template and
+ * metadata. Anything else reads as none. Note that "thinking" says the
+ * template can carry a thought, not that the weights produce one: the
+ * non-thinking qwen3 instruct tag lists it too.
+ */
+export function toModelCapabilities(value: unknown): string[] {
+    if (typeof value !== 'object' || value === null) {
+        return [];
+    }
+    const rawCapabilities: unknown = (value as { capabilities?: unknown }).capabilities;
+    if (!Array.isArray(rawCapabilities)) {
+        return [];
+    }
+    return rawCapabilities.filter((entry: unknown): entry is string => typeof entry === 'string');
 }
 
 /** A parsed stream line is `unknown`; anything that is not a JSON object carries nothing and reads as an empty chunk. */

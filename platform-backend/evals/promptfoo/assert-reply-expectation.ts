@@ -1,6 +1,7 @@
 import type { AssertionValueFunctionContext, GradingResult } from 'promptfoo';
 import type { ToolChoiceCase } from '../cases/interfaces.ts';
 import type { CaseScore } from '../scoring/interfaces.ts';
+import { REPLY_MATCHES_REASON, REPLY_NOT_JUDGED_REASON } from '../scoring/judge-case-verdict.ts';
 import { scoreReplyExpectation } from '../scoring/score-reply-expectation.ts';
 import { readToolChoiceCaseOfRow } from './read-tool-choice-case-of-row.ts';
 
@@ -19,11 +20,11 @@ export default function assertReplyExpectation(output: string, context: Assertio
         return { pass: false, score: 0, reason: `no eval case with id ${JSON.stringify(context.test.description)}` };
     }
     if (testCase.reply === undefined) {
-        return { pass: true, score: 1, reason: 'reply not judged (the case has no reply expectation)' };
+        return { pass: true, score: 1, reason: REPLY_NOT_JUDGED_REASON };
     }
     const score: CaseScore = scoreReplyExpectation(testCase.reply, output);
     if (score.passed) {
-        return { pass: true, score: 1, reason: 'reply says what the case expects' };
+        return { pass: true, score: 1, reason: REPLY_MATCHES_REASON };
     }
     return { pass: false, score: 0, reason: score.problems.join('; ') };
 }

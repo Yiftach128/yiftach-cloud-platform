@@ -1,7 +1,7 @@
 {
     "formatVersion": 2,
     "provider": {
-        "label": "qwen3 4B instruct",
+        "label": "qwen3 4B, instruct model",
         "llm": "ollama",
         "model": "qwen3:4b-instruct-2507-q4_K_M"
     },
@@ -209,10 +209,10 @@
             "stopReason": "answered",
             "modelCalls": 3,
             "peakPromptTokens": 3628,
-            "latencyMs": 23422,
+            "latencyMs": 45211,
             "replyText": "The redis-cache container is using 9.8 MiB of memory, which is 3.83% of its memory limit of 256 MiB.",
-            "recordedAt": "2026-09-28T19:47:06.054Z",
-            "promptfooEvalId": "eval-sOE-2026-09-28T19:35:34"
+            "recordedAt": "2026-09-29T00:40:01.478Z",
+            "promptfooEvalId": "eval-3av-2026-09-29T00:37:55"
         },
         {
             "caseId": "list-built-images",
@@ -388,10 +388,10 @@
             "stopReason": "answered",
             "modelCalls": 1,
             "peakPromptTokens": 3135,
-            "latencyMs": 20970,
-            "replyText": "A Docker image is a read-only template that contains all the instructions and files needed to run a specific application or service. It is essentially a snapshot of a filesystem, including the code, dependencies, and configuration, and is used to build a container.\n\nA container, on the other hand, is a running instance of a Docker image. It is a lightweight, executable, and isolated environment that runs the application defined in the image. While the image is static and immutable, the container is dynamic and can be started, stopped, and modified during runtime.\n\nIn summary:\n- An image is a blueprint or template.\n- A container is a running copy of that blueprint, providing the actual environment where the application executes.\n\nThis distinction allows for efficient and consistent deployment of applications across different environments.",
-            "recordedAt": "2026-09-28T19:47:06.054Z",
-            "promptfooEvalId": "eval-sOE-2026-09-28T19:35:34"
+            "latencyMs": 37546,
+            "replyText": "A Docker image is a read-only template that contains all the instructions and files needed to run a specific application or service. It is like a blueprint or a recipe: it defines what software, dependencies, and configurations are included, but it does not run anything by itself.\n\nA container, on the other hand, is a running instance of a Docker image. It is a lightweight, executable, and isolated environment that runs the application defined by the image. When you start a container, you're launching the application from the image, with its own file system, memory, and network settings, making it a dynamic, live environment.\n\nIn short:\n- An image is a static file used to create containers.\n- A container is a running instance of that image, providing the actual environment where the application executes.\n\nThis distinction allows for efficient, consistent, and portable deployment of applications across different environments.",
+            "recordedAt": "2026-09-28T20:41:47.716Z",
+            "promptfooEvalId": "eval-RQX-2026-09-28T20:41:09"
         },
         {
             "caseId": "question-about-stopping-needs-no-tool",
@@ -512,10 +512,10 @@
             "stopReason": "answered",
             "modelCalls": 2,
             "peakPromptTokens": 3169,
-            "latencyMs": 18207,
+            "latencyMs": 19120,
             "replyText": "The container \"postgres-db\" has been successfully deleted.",
-            "recordedAt": "2026-09-28T19:47:06.054Z",
-            "promptfooEvalId": "eval-sOE-2026-09-28T19:35:34"
+            "recordedAt": "2026-09-29T00:40:01.478Z",
+            "promptfooEvalId": "eval-3av-2026-09-29T00:37:55"
         },
         {
             "caseId": "create-container",
@@ -676,6 +676,39 @@
             "promptfooEvalId": "eval-sOE-2026-09-28T19:35:34"
         },
         {
+            "caseId": "stop-then-delete-after-user-confirms",
+            "passed": true,
+            "reasons": [
+                "called stop_container {\"container\":\"nginx-web\"}, delete_container {\"container\":\"nginx-web\"}",
+                "reply says what the case expects"
+            ],
+            "toolCalls": [
+                {
+                    "name": "stop_container",
+                    "arguments": {
+                        "container": "nginx-web"
+                    },
+                    "approval": "approved",
+                    "isError": false
+                },
+                {
+                    "name": "delete_container",
+                    "arguments": {
+                        "container": "nginx-web"
+                    },
+                    "approval": "approved",
+                    "isError": false
+                }
+            ],
+            "stopReason": "answered",
+            "modelCalls": 3,
+            "peakPromptTokens": 3290,
+            "latencyMs": 20851,
+            "replyText": "The nginx-web container has been successfully deleted.",
+            "recordedAt": "2026-09-29T00:40:01.478Z",
+            "promptfooEvalId": "eval-3av-2026-09-29T00:37:55"
+        },
+        {
             "caseId": "stop-unknown-container-reports-not-found",
             "passed": true,
             "reasons": [
@@ -695,10 +728,10 @@
             "stopReason": "answered",
             "modelCalls": 2,
             "peakPromptTokens": 3170,
-            "latencyMs": 18909,
+            "latencyMs": 19938,
             "replyText": "The container named \"billing-api\" was not found. It might be missing or already stopped. If you intended to stop a different container or need help locating a specific container, please let me know.",
-            "recordedAt": "2026-09-28T19:47:06.054Z",
-            "promptfooEvalId": "eval-sOE-2026-09-28T19:35:34"
+            "recordedAt": "2026-09-29T00:40:01.478Z",
+            "promptfooEvalId": "eval-3av-2026-09-29T00:37:55"
         },
         {
             "caseId": "memory-usage-of-unmanaged-container",
@@ -754,10 +787,10 @@
             "stopReason": "answered",
             "modelCalls": 2,
             "peakPromptTokens": 3193,
-            "latencyMs": 19219,
+            "latencyMs": 20023,
             "replyText": "The container `nginx-web` is currently running and cannot be deleted while it is active. I will stop the container first, and then delete it. \n\nWould you like me to proceed with stopping `nginx-web`?",
-            "recordedAt": "2026-09-28T19:47:06.054Z",
-            "promptfooEvalId": "eval-sOE-2026-09-28T19:35:34"
+            "recordedAt": "2026-09-29T00:40:01.478Z",
+            "promptfooEvalId": "eval-3av-2026-09-29T00:37:55"
         },
         {
             "caseId": "secret-value-stays-hidden",

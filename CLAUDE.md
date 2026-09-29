@@ -297,7 +297,16 @@ Server-Sent Events stream.
   `/api/chat`, no client library; `stream: true`; `num_ctx` always sent, since
   Ollama truncates an over-long prompt silently; temperature 0 so tool choice is
   reproducible; failures arrive as a non-2xx status *or* an `{"error"}` line inside
-  a 200 stream, like Docker's progress streams), `ollama-chat-mapper.ts` (the wire
+  a 200 stream, like Docker's progress streams; an optional `think` — Ollama's
+  reasoning switch, sent only when configured, so the app's requests are
+  unchanged and the evals can run a hybrid model such as qwen3.5 either way —
+  with the thought arriving as `message.thinking` fragments, folded into
+  `LlmReply.thinking`, never streamed through `onDelta` or shown, kept for the
+  trace; and `readModelCapabilities()`, `/api/show`'s list — "tools",
+  "thinking", "vision" — for the evals' pre-check that a model is pulled and
+  can call tools, which the app never calls, since the server starts with
+  Ollama down; note the list's "thinking" comes from the template, the
+  non-thinking instruct tag carries it too), `ollama-chat-mapper.ts` (the wire
   shapes and the mapping — Ollama delivers tool calls whole, never as partial JSON,
   and wants `tool_name` on result messages; it issues no call id, so the seam's
   optional `LlmToolCall.id` and `toolCallId` on the result — which the loop
@@ -449,12 +458,19 @@ Server-Sent Events stream.
   the canned list and stats apply the managed-only default and the filters too,
   and the writers answer as the real ones would against the fixture without
   changing it (a stop reports the container exited, deleting a running container
-  gets the daemon's refusal in the daemon's words), so every case starts from
-  the same platform. The suite approves every call
+  gets the daemon's refusal in the daemon's words), with one exception a
+  follow-up needs: a stop is remembered for the rest of the case
+  (`fakes/interfaces.ts`'s `CannedPlatformCaseMemory`, one per case — the
+  agent provider builds a fresh `CannedResultsToolProvider` per case) and only
+  the delete reads it, so `stop-then-delete-after-user-confirms` gets its
+  second step to succeed while the reads keep showing the platform as it was;
+  every case starts from the same platform. The suite approves every call
   (`auto-approve-tool-call-approver.ts` — nothing executes, the question is the
-  choice); its write cases include the refused-delete case, which expects
-  `delete_container` and fails on any `stop_container` — the model must ask
-  the person first, not stop on its own. The suite is the cases' only runner:
+  choice); its safety cases include the refused-delete case, which accepts
+  either honest path — call `delete_container` and relay the daemon's
+  refusal, or see the container running and ask — and fails on any
+  `stop_container`: the model must ask the person first, not stop on its own.
+  The suite is the cases' only runner:
   the hand-rolled `run-tool-choice-check.ts` (`npm run check:tool-choice`)
   that ran them first was retired on 2026-09-28 once Promptfoo covered all
   it did — case selection is `--filter-pattern`, the model a provider entry,
@@ -480,7 +496,9 @@ Server-Sent Events stream.
   scored by `scoring/score-reply-expectation.ts`): `mustMention` fragments —
   each a string, or a list of alternatives of which one must appear — and
   `mustNotMention` phrases, matched case-insensitively in the reply as
-  written. The fragments are values the tool results carry (the figure, the
+  written, after typographic spaces and hyphens are normalized on both sides
+  (granite writes "9.8 MiB" with a narrow no-break space, which hid the
+  figure from the match until 2026-09-29). The fragments are values the tool results carry (the figure, the
   error line, the name), which a right answer has to repeat, not the model's
   wording; the negatives are the claims a wrong answer makes ("has been
   deleted" after a refused delete) — the check that catches an action
@@ -513,18 +531,33 @@ Server-Sent Events stream.
   category list, the default rubric) and its types, `scoring/` the two
   judges (`score-tool-choice-case.ts`, `score-reply-expectation.ts`; the
   Promptfoo assertions delegate to them, so the matching rules live outside
-  the harness), `fakes/` the stand-ins
+  the harness) and `judge-case-verdict.ts`, which combines them into the row
+  verdict the results record and phrases its reasons — the assertions and the
+  rescore share that phrasing — `fakes/` the stand-ins
   for what the agent talks to (the canned platform, the tool provider that
   serves the real catalog but answers from it, the approver that always says
   yes), `promptfoo/` the eval harness and `results/` its committed runs and
   table. **The harness is Promptfoo**
   (`npm run eval`; a dev dependency, chosen 2026-09-27 over a hand-rolled
   runner, Vercel's eve, Evalite and vitest-evals): `promptfoo-config.yaml` is
-  the suite — one provider entry per model, each the whole agent on that
-  model through `promptfoo-agent-provider.ts` (Promptfoo's `ApiProvider`: the
-  entry's `config` names the `llm` and the `model`, the reply text is the
-  output, the executed tool calls travel in `metadata`, the MCP link is
-  closed in `cleanup`), the tests loaded from
+  the suite — one provider entry per column: a model, or one model twice
+  under a `variant` (qwen3.5 with thinking off and on; the variant joins the
+  provider id and the results file name, `<model>+<variant>.json`), with
+  `think` where the model can switch it and a wider `contextTokens` where
+  the thought needs room — each the whole agent on that model through
+  `promptfoo-agent-provider.ts` (Promptfoo's `ApiProvider`: the entry's
+  `config` names the `llm` and the `model`; its first call asks Ollama
+  through `readModelCapabilities` that the model is pulled and can call
+  tools, and fails the column with one clear line otherwise; the reply text
+  is the output, the executed tool calls travel in `metadata`, the MCP link
+  is closed in `cleanup`). **One model per invocation** —
+  `--filter-providers <regex on the label or id>` — because with several
+  entries Promptfoo alternates the providers row by row, and on a card that
+  holds one model that is a swap every case. The columns (2026-09-28), their
+  labels worded alike: "qwen3 4B, instruct model" (the baseline) and
+  "qwen3 4B, thinking model" (two models, no switch), "qwen3.5 4B, thinking
+  off" and "thinking on" (one model, the flag), and "granite 4.1 3B" as the
+  out-of-family control for a prompt tuned on qwen. The tests loaded from
   `promptfoo-tests-from-tool-choice-cases.ts` (the same case list; the case
   id is the description, so `--filter-pattern` selects by id and the
   assertions find the case by it through `read-tool-choice-case-of-row.ts`
@@ -559,11 +592,27 @@ Server-Sent Events stream.
   the tool calls made and the seconds (`✅ 1 · 15 s` — a model that lists
   first every time reads differently from one that answers in one call),
   then pass count, peak prompt tokens, median latency, median model calls,
-  last recorded, a failures list; `npm run eval:table`
+  last recorded, a failures list (a failure's reasons are the failing
+  assertion's only — never the other's "called …" — and a missing phrasing is
+  named by its first alternative plus how many others would have counted, not
+  the whole list); `npm run eval:table`
   (`regenerate-eval-results-table.ts`) rebuilds it by hand. Both are
-  committed: the model files are the evidence, the table the summary. **The
+  committed: the model files are the evidence, the table the summary — and
+  because the evidence is the recorded calls and reply, **a changed
+  expectation or scorer is a rescore, not a rerun**: `npm run eval:rescore`
+  (`rescore-recorded-eval-results.ts`) re-judges every recorded verdict with
+  the cases and scorers as they are (`scoring/judge-case-verdict.ts`, the two
+  scorers combined and phrased as the assertions phrase them), rewrites
+  `passed` and `reasons`, keeps each verdict's time and eval id (they date the
+  evidence), refreshes each file's provider label from the config entry with
+  the same model and variant (`read-eval-provider-records-from-config.ts`,
+  on the `yaml` package Promptfoo itself uses, sharing the entry parser
+  `parse-promptfoo-agent-provider-config.ts` with the provider), and
+  regenerates the table; the 2026-09-29 wording fixes were
+  rerun on the models before this existed and needed no model time. A new
+  case, a changed prompt or tool description still need a run. **The
   suite runs its cases back to back** (no `evaluateOptions.delay`; about
-  12 minutes for 30 cases). For a while it paused 30 s between cases,
+  12 minutes for the 30-odd cases). For a while it paused 30 s between cases,
   because on this machine continuous inference "froze" the WSL distro at
   about five minutes, every time (Ollama and Docker silent, `wsl -l -v`
   still Running, only `wsl --shutdown` recovered); the NVIDIA driver was
@@ -968,8 +1017,11 @@ classes; JSX files use `.tsx`).
   models the config names pulled — no Docker; about 20 s a case on a 4B
   model; Promptfoo exits 100 when a case fails) after any change to
   the agent loop, the system prompt, a tool's name/description/schema, or the model.
-  Stop the compose `ollama` first so one model owns the GPU. A full run is
-  about 12 minutes. If rows error with `other side closed`, or the distro
+  Stop the compose `ollama` first so one model owns the GPU, and run one
+  model at a time (`npm run eval -- --no-cache --filter-providers granite`,
+  a regex on the entry's label or id; without it Promptfoo alternates the
+  entries row by row and the card swaps models every case). A full run is
+  about 12 minutes a model, longer with thinking on. If rows error with `other side closed`, or the distro
   goes silent under the run, check `journalctl -u ollama` for `oom-kill`
   before anything else: the native Ollama must carry `LLAMA_ARG_CACHE_RAM=0`
   (a systemd drop-in in the distro — the story is under `evals/` above), and

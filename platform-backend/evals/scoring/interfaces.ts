@@ -11,3 +11,13 @@ export interface CaseScore {
     /** Why the case failed, one line per problem; empty when it passed. */
     problems: string[];
 }
+
+/**
+ * The row verdict of a case against a run, both scorers combined
+ * (`judge-case-verdict.ts`) — what a results file records per case.
+ */
+export interface CaseVerdict {
+    passed: boolean;
+    /** On a failure, the failing scorers' problems; on a pass, what was called and that the reply matched. */
+    reasons: string[];
+}

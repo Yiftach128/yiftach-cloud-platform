@@ -14,7 +14,7 @@ import type { LlmChatRequest, LlmClient, LlmReply, LlmToolCall } from '../interf
 import { LlmRequestError } from '../llm-request-error.ts';
 import { LlmUnavailableError } from '../llm-unavailable-error.ts';
 import type { OllamaLlmClientOptions } from './interfaces.ts';
-import { toLlmToolCalls, toOllamaChatChunk, toOllamaChatRequestBody } from './ollama-chat-mapper.ts';
+import { toLlmToolCalls, toModelCapabilities, toOllamaChatChunk, toOllamaChatRequestBody } from './ollama-chat-mapper.ts';
 import type { OllamaChatChunk, OllamaChatRequestBody } from './ollama-chat-mapper.ts';
 import { readNdjsonStream } from './read-ndjson-stream.ts';
 
@@ -24,6 +24,9 @@ import { readNdjsonStream } from './read-ndjson-stream.ts';
  * Ollama sends nothing while it does.
  */
 const STREAM_IDLE_TIMEOUT_MS = 120_000;
+
+/** `/api/show` answers from the model's metadata on disk, at once; a longer wait means the server is not there. */
+const SHOW_MODEL_TIMEOUT_MS = 10_000;
 
 // Names the `ollama ps` of each deployment: under compose the platform talks to the
 // `ollama` service, not to an Ollama installed in the WSL distro, whose `ollama ps`
@@ -37,6 +40,7 @@ export class OllamaLlmClient implements LlmClient {
     readonly baseUrl: string;
     readonly model: string;
     private readonly contextTokens: number;
+    private readonly think: boolean | undefined;
 
     constructor(options: OllamaLlmClientOptions) {
         if (options.baseUrl.endsWith('/')) {
@@ -46,6 +50,32 @@ export class OllamaLlmClient implements LlmClient {
         }
         this.model = options.model;
         this.contextTokens = options.contextTokens;
+        this.think = options.think;
+    }
+
+    /**
+     * What the model can do, as Ollama's `/api/show` reports it — "tools",
+     * "thinking", "vision", "completion". For a caller that must know before
+     * the first chat: the evals check "tools", and that the model is pulled at
+     * all (a tag Ollama does not have is a 404, an `LlmRequestError`). The app
+     * never asks — the server starts with Ollama down.
+     */
+    async readModelCapabilities(): Promise<string[]> {
+        let response: Response;
+        try {
+            response = await fetch(`${this.baseUrl}/api/show`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: this.model }),
+                signal: AbortSignal.timeout(SHOW_MODEL_TIMEOUT_MS),
+            });
+        } catch (error) {
+            throw new LlmUnavailableError(this.baseUrl, `${describeFetchFailure(error)}. ${UNREACHABLE_HINT}`, error);
+        }
+        if (!response.ok) {
+            throw new LlmRequestError(response.status, await readErrorDetail(response));
+        }
+        return toModelCapabilities(await response.json());
     }
 
     async streamChat(
@@ -54,7 +84,7 @@ export class OllamaLlmClient implements LlmClient {
         signal: AbortSignal,
     ): Promise<LlmReply> {
         const reply: LlmReply = { content: '', toolCalls: [], promptTokens: 0, generatedTokens: 0 };
-        const body: OllamaChatRequestBody = toOllamaChatRequestBody(request, this.model, this.contextTokens);
+        const body: OllamaChatRequestBody = toOllamaChatRequestBody(request, this.model, this.contextTokens, this.think);
 
         // The caller's signal is the Stop button; the watchdog's is ours. Either ends the fetch.
         const idleWatchdog: AbortController = new AbortController();
@@ -111,7 +141,11 @@ export class OllamaLlmClient implements LlmClient {
     }
 }
 
-/** Folds one stream line into the reply, forwarding its text fragment — the only part worth showing live. */
+/**
+ * Folds one stream line into the reply, forwarding its text fragment — the
+ * only part worth showing live. A thought fragment (a thinking model, before
+ * its answer) is kept whole on the reply and not forwarded.
+ */
 function applyChunk(chunk: OllamaChatChunk, reply: LlmReply, onDelta: (textDelta: string) => void): void {
     if (chunk.error !== undefined) {
         throw new LlmRequestError(0, String(chunk.error));
@@ -121,6 +155,14 @@ function applyChunk(chunk: OllamaChatChunk, reply: LlmReply, onDelta: (textDelta
         if (typeof text === 'string' && text !== '') {
             reply.content = reply.content + text;
             onDelta(text);
+        }
+        const thought: unknown = chunk.message.thinking;
+        if (typeof thought === 'string' && thought !== '') {
+            if (reply.thinking === undefined) {
+                reply.thinking = thought;
+            } else {
+                reply.thinking = reply.thinking + thought;
+            }
         }
         const calls: LlmToolCall[] = toLlmToolCalls(chunk.message.tool_calls);
         for (const call of calls) {

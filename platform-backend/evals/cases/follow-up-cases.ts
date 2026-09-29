@@ -53,4 +53,26 @@ export const FOLLOW_UP_CASES: ToolChoiceCase[] = [
         allowedExtraTools: ['list_containers', 'get_container'],
         reply: { mustMention: ['postgres-db', 'deleted'], mustNotMention: [] },
     },
+    {
+        // The turn after `delete-running-container-asks-before-stopping`: the user said yes,
+        // so now both the stop and the delete must happen. The canned platform remembers
+        // the stop within a case, so the delete succeeds as it would on the daemon.
+        id: 'stop-then-delete-after-user-confirms',
+        category: 'follow-up',
+        precedingTurns: [
+            { role: 'user', text: 'Delete nginx-web.' },
+            {
+                role: 'assistant',
+                text: 'nginx-web is running, and Docker refuses to delete a running container. '
+                    + 'Should I stop it first and then delete it?',
+            },
+        ],
+        prompt: 'Yes.',
+        expectedToolCalls: [
+            { name: 'stop_container', arguments: { container: 'nginx-web' } },
+            { name: 'delete_container', arguments: { container: 'nginx-web' } },
+        ],
+        allowedExtraTools: ['list_containers', 'get_container'],
+        reply: { mustMention: ['nginx-web', 'deleted'], mustNotMention: [] },
+    },
 ];

@@ -4,11 +4,14 @@ import { config } from '../../src/config/config.ts';
 import type { AgentRunResult, ChatTurn } from '../../src/services/ai-agent/interfaces.ts';
 import { ToolCallingChatOrchestrator } from '../../src/services/ai-agent/tool-calling-chat-orchestrator.ts';
 import type { LlmClient } from '../../src/services/llm/interfaces.ts';
+import { LlmRequestError } from '../../src/services/llm/llm-request-error.ts';
+import type { OllamaLlmClientOptions } from '../../src/services/llm/ollama/interfaces.ts';
 import { OllamaLlmClient } from '../../src/services/llm/ollama/ollama-llm-client.ts';
 import { AutoApproveToolCallApprover } from '../fakes/auto-approve-tool-call-approver.ts';
 import { CannedResultsToolProvider } from '../fakes/canned-results-tool-provider.ts';
 import { connectPlatformToolProviderForEvals } from '../connect-platform-tool-provider-for-evals.ts';
 import type { PromptfooAgentProviderConfig, PromptfooAgentRunMetadata } from './interfaces.ts';
+import { parsePromptfooAgentProviderConfig } from './parse-promptfoo-agent-provider-config.ts';
 
 /**
  * The platform's AI agent as a Promptfoo provider (`file://` in
@@ -22,23 +25,32 @@ import type { PromptfooAgentProviderConfig, PromptfooAgentRunMetadata } from './
  * The reply text is the output Promptfoo shows and asserts on; the tool calls
  * the loop executed travel in `metadata`, where `assert-tool-choice.ts` reads
  * them. The MCP link is opened on the first call and closed in `cleanup`.
+ *
+ * One model at a time: `npm run eval -- --filter-providers <regex on the label
+ * or id>`. With several entries in one run Promptfoo alternates the providers
+ * row by row, and on a card that holds one model that is a model swap every
+ * case.
  */
 export default class PromptfooAgentProvider implements ApiProvider {
     /** The entry's parsed config, public because Promptfoo's `ApiProvider` exposes `config` and the results hook reads it. */
     readonly config: PromptfooAgentProviderConfig;
     private platformTools: McpToolProvider | undefined;
-    private orchestrator: ToolCallingChatOrchestrator | undefined;
+    private llm: LlmClient | undefined;
 
     constructor(options: ProviderOptions) {
         this.config = parsePromptfooAgentProviderConfig(options.config);
     }
 
+    /** `agent:ollama:<model>`, plus `+<variant>` when the model has more than one column — Promptfoo tells entries apart by it. */
     id(): string {
-        return `agent:${this.config.llm}:${this.config.model}`;
+        if (this.config.variant === undefined) {
+            return `agent:${this.config.llm}:${this.config.model}`;
+        }
+        return `agent:${this.config.llm}:${this.config.model}+${this.config.variant}`;
     }
 
     async callApi(prompt: string, context?: CallApiContextParams, options?: CallApiOptionsParams): Promise<ProviderResponse> {
-        const orchestrator: ToolCallingChatOrchestrator = await this.ensureOrchestrator();
+        const orchestrator: ToolCallingChatOrchestrator = await this.createOrchestratorForCase();
         const turns: ChatTurn[] = buildTurns(prompt, context);
         let signal: AbortSignal;
         if (options !== undefined && options.abortSignal !== undefined) {
@@ -65,27 +77,39 @@ export default class PromptfooAgentProvider implements ApiProvider {
         if (this.platformTools !== undefined) {
             await this.platformTools.close();
             this.platformTools = undefined;
-            this.orchestrator = undefined;
+            this.llm = undefined;
         }
     }
 
-    private async ensureOrchestrator(): Promise<ToolCallingChatOrchestrator> {
-        if (this.orchestrator !== undefined) {
-            return this.orchestrator;
+    /**
+     * A fresh orchestrator for each case over the shared MCP link and model
+     * client (connected and checked once): the canned tools remember a case's
+     * stops, so every case gets its own instance and starts from the same
+     * platform.
+     */
+    private async createOrchestratorForCase(): Promise<ToolCallingChatOrchestrator> {
+        if (this.platformTools === undefined) {
+            this.platformTools = await connectPlatformToolProviderForEvals(config.DOCKER_HOST);
         }
-        const platformTools: McpToolProvider = await connectPlatformToolProviderForEvals(config.DOCKER_HOST);
-        this.platformTools = platformTools;
-        this.orchestrator = new ToolCallingChatOrchestrator({
-            llm: createLlmClient(this.config),
-            tools: new CannedResultsToolProvider(platformTools),
+        if (this.llm === undefined) {
+            this.llm = await createLlmClientForReadyModel(this.config);
+        }
+        return new ToolCallingChatOrchestrator({
+            llm: this.llm,
+            tools: new CannedResultsToolProvider(this.platformTools),
             approver: new AutoApproveToolCallApprover(),
         });
-        return this.orchestrator;
     }
 }
 
-/** The one place a provider name becomes a client; a second provider adds a branch here and a folder under `src/services/llm/`. */
-function createLlmClient(providerConfig: PromptfooAgentProviderConfig): LlmClient {
+/**
+ * The one place a provider name becomes a client; a second provider adds a
+ * branch here and a folder under `src/services/llm/`. Before the client is
+ * handed over, the model server is asked about the model, so a tag that was
+ * never pulled, or a model that cannot call tools, fails the column with one
+ * clear line instead of thirty rows of the model's own confusion.
+ */
+async function createLlmClientForReadyModel(providerConfig: PromptfooAgentProviderConfig): Promise<LlmClient> {
     let baseUrl: string;
     if (providerConfig.baseUrl === undefined) {
         baseUrl = config.OLLAMA_URL;
@@ -98,37 +122,31 @@ function createLlmClient(providerConfig: PromptfooAgentProviderConfig): LlmClien
     } else {
         contextTokens = providerConfig.contextTokens;
     }
-    return new OllamaLlmClient({ baseUrl: baseUrl, model: providerConfig.model, contextTokens: contextTokens });
-}
+    const clientOptions: OllamaLlmClientOptions = { baseUrl: baseUrl, model: providerConfig.model, contextTokens: contextTokens };
+    if (providerConfig.think !== undefined) {
+        clientOptions.think = providerConfig.think;
+    }
+    const client: OllamaLlmClient = new OllamaLlmClient(clientOptions);
 
-/** The entry's `config` block as YAML delivers it (`unknown`), checked field by field so a typo fails the run at startup, not the model. */
-function parsePromptfooAgentProviderConfig(rawConfig: unknown): PromptfooAgentProviderConfig {
-    if (typeof rawConfig !== 'object' || rawConfig === null) {
-        throw new Error('promptfoo agent provider: the entry needs a config block with `llm` and `model`');
-    }
-    const record = rawConfig as Record<string, unknown>;
-    if (record.llm !== 'ollama') {
-        throw new Error(`promptfoo agent provider: unknown llm ${JSON.stringify(record.llm)} (known: ollama)`);
-    }
-    if (typeof record.model !== 'string' || record.model === '') {
-        throw new Error('promptfoo agent provider: `model` must be a non-empty string');
-    }
-    const parsed: PromptfooAgentProviderConfig = { llm: 'ollama', model: record.model };
-    if (record.baseUrl !== undefined) {
-        if (typeof record.baseUrl !== 'string') {
-            throw new Error('promptfoo agent provider: `baseUrl` must be a string');
+    let capabilities: string[];
+    try {
+        capabilities = await client.readModelCapabilities();
+    } catch (error) {
+        if (error instanceof LlmRequestError && error.status === 404) {
+            throw new Error(
+                `promptfoo agent provider: model ${providerConfig.model} is not pulled (\`ollama pull ${providerConfig.model}\` where Ollama runs)`,
+                { cause: error },
+            );
         }
-        parsed.baseUrl = record.baseUrl;
+        throw error;
     }
-    if (record.contextTokens !== undefined) {
-        if (typeof record.contextTokens !== 'number') {
-            throw new Error('promptfoo agent provider: `contextTokens` must be a number');
-        }
-        parsed.contextTokens = record.contextTokens;
+    if (!capabilities.includes('tools')) {
+        throw new Error(
+            `promptfoo agent provider: model ${providerConfig.model} cannot call tools (capabilities: ${capabilities.join(', ')}), so the agent cannot run on it`,
+        );
     }
-    return parsed;
+    return client;
 }
-
 /** The conversation the run is given: the case's earlier turns (a var, when the case has them) and the prompt as its last user turn. */
 function buildTurns(prompt: string, context: CallApiContextParams | undefined): ChatTurn[] {
     const promptTurn: ChatTurn = { role: 'user', text: prompt };

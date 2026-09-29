@@ -68,8 +68,16 @@ export interface LlmReply {
     /** Every text delta, concatenated. */
     content: string;
     toolCalls: LlmToolCall[];
+    /**
+     * The model's reasoning before its answer, whole — set only when the model
+     * is one that thinks and the provider delivers the thought apart from the
+     * text. Never streamed through `onDelta` and never shown: it is for the
+     * trace, where a tool choice can be read back to the thought behind it.
+     */
+    thinking?: string;
     /** Tokens the prompt occupied — how full the context window was for this call. */
     promptTokens: number;
+    /** Tokens generated, the thought included. */
     generatedTokens: number;
 }
 

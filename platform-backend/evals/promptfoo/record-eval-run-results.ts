@@ -62,7 +62,7 @@ export async function recordEvalRunResultsAfterAll(context: PromptfooAfterAllHoo
             continue;
         }
         const provider: EvalProviderRecord = describeProvider(providerId, firstRow.provider.label, context.suite.providers);
-        const fileName: string = toModelResultsFileName(provider.model);
+        const fileName: string = toModelResultsFileName(provider.model, provider.variant);
         const filePath: string = join(EVAL_RESULTS_DIR, fileName);
         const newCases: EvalCaseRecord[] = rows.map((row: EvaluateResult) => toCaseRecord(row, recordedAt, context.evalId));
         const merged: EvalModelResults = mergeIntoModelResults(readModelResults(filePath), provider, newCases);
@@ -113,9 +113,9 @@ function groupRowsByProviderId(rows: EvaluateResult[]): Map<string, EvaluateResu
 }
 
 /**
- * The model behind a provider id: the label from the row, `llm` and `model`
- * from the provider instance's parsed config (the agent provider exposes it;
- * any other provider reads as unknown).
+ * The model behind a provider id: the label from the row, `llm`, `model` and
+ * `variant` from the provider instance's parsed config (the agent provider
+ * exposes it; any other provider reads as unknown).
  */
 function describeProvider(providerId: string, label: string | undefined, providers: ApiProvider[]): EvalProviderRecord {
     let resolvedLabel: string;
@@ -126,6 +126,7 @@ function describeProvider(providerId: string, label: string | undefined, provide
     }
     let llm: string = 'unknown';
     let model: string = providerId;
+    let variant: string | undefined;
     const provider: ApiProvider | undefined = providers.find((candidate: ApiProvider) => candidate.id() === providerId);
     if (provider !== undefined && typeof provider.config === 'object' && provider.config !== null) {
         const providerConfig = provider.config as Record<string, unknown>;
@@ -135,8 +136,15 @@ function describeProvider(providerId: string, label: string | undefined, provide
         if (typeof providerConfig.model === 'string') {
             model = providerConfig.model;
         }
+        if (typeof providerConfig.variant === 'string') {
+            variant = providerConfig.variant;
+        }
     }
-    return { label: resolvedLabel, llm: llm, model: model };
+    const record: EvalProviderRecord = { label: resolvedLabel, llm: llm, model: model };
+    if (variant !== undefined) {
+        record.variant = variant;
+    }
+    return record;
 }
 
 /** The model's file as it is, or nothing when this is its first run. An older format is refused, not silently rewritten. */
@@ -222,14 +230,23 @@ function toCaseRecord(result: EvaluateResult, recordedAt: string, promptfooEvalI
     return record;
 }
 
-/** The assertion reasons of a row: one per component when the row had several assertions, else the single reason. */
+/**
+ * The assertion reasons of a row, one per assertion: on a failed row only the
+ * failing assertions' — the passing one's "called …" is not why the row
+ * failed — and on a passed row every one (what was called, that the reply
+ * matched), the same shape `judge-case-verdict.ts` gives a rescored row.
+ */
 function readAssertionReasons(result: EvaluateResult): string[] {
     const grading = result.gradingResult;
     if (grading === undefined || grading === null) {
         return [];
     }
     if (grading.componentResults !== undefined && grading.componentResults.length > 0) {
-        return grading.componentResults.map((component) => component.reason);
+        let components = grading.componentResults;
+        if (!result.success) {
+            components = components.filter((component) => !component.pass);
+        }
+        return components.map((component) => component.reason);
     }
     if (grading.reason === '') {
         return [];

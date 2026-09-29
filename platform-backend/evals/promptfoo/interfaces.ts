@@ -18,6 +18,15 @@ import type { AgentStopReason, ExecutedToolCall, ToolCallApprovalOutcome } from 
 export interface PromptfooAgentProviderConfig {
     llm: 'ollama';
     model: string;
+    /**
+     * Tells two columns of one model apart — thinking on and off, a
+     * tool-result format — in the provider id, the results file
+     * (`<model>+<variant>.json`) and the table's legend. Lowercase letters,
+     * digits and dashes.
+     */
+    variant?: string;
+    /** Ollama's `think`: reasoning before the answer, for a model that can switch it. Absent, the model's default. */
+    think?: boolean;
     baseUrl?: string;
     contextTokens?: number;
 }
@@ -65,11 +74,13 @@ export interface EvalModelResults {
     cases: EvalCaseRecord[];
 }
 
-/** The model a column stands for: its label in the table and the provider entry's `llm` and `model`. */
+/** The model a column stands for: its label in the table and the provider entry's `llm`, `model` and `variant`. */
 export interface EvalProviderRecord {
     label: string;
     llm: string;
     model: string;
+    /** The entry's `variant`, when the model has more than one column. */
+    variant?: string;
 }
 
 export interface EvalCaseRecord {

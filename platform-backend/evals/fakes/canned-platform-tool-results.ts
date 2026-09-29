@@ -8,6 +8,7 @@ import type {
     ImageToolSummary,
 } from '../../src/mcp/server/interfaces.ts';
 import { describeHiddenUnmanagedContainers } from '../../src/mcp/server/tool-results-utils/describe-hidden-unmanaged-containers.ts';
+import type { CannedPlatformCaseMemory } from './interfaces.ts';
 import { renderValueAsToolResultJson } from '../../src/mcp/server/tool-results-utils/tool-result-builders.ts';
 import { toShortImageId } from '../../src/mcp/server/tool-results-utils/tool-result-value-formatters.ts';
 import type { ToolCallOutcome } from '../../src/services/ai-agent/interfaces.ts';
@@ -29,8 +30,12 @@ import type { ImageDetails } from '../../src/services/docker/interfaces.ts';
  * model can reconcile with its question. The tools that change something
  * answer the way the real ones would against this fixture — a stop reports
  * the container exited, a delete of a running container is refused with the
- * daemon's words — without changing the fixture: every case starts from the
- * same platform.
+ * daemon's words — without changing the fixture, with one exception a
+ * follow-up needs: a stop is remembered for the rest of the case
+ * (`CannedPlatformCaseMemory`, one per case), and only the delete reads it,
+ * so stopping a container and then deleting it succeeds the way it would on
+ * the daemon while the reads keep showing the platform as it was. Every case
+ * starts from the same platform.
  */
 
 /** The job id start_build hands out; get_build then finds it running. */
@@ -272,7 +277,11 @@ const LOGS: Record<string, string[]> = {
     ],
 };
 
-export function cannedPlatformToolResult(name: string, toolArguments: Record<string, unknown>): ToolCallOutcome {
+export function cannedPlatformToolResult(
+    name: string,
+    toolArguments: Record<string, unknown>,
+    caseMemory: CannedPlatformCaseMemory,
+): ToolCallOutcome {
     if (name === 'list_containers') {
         return toJsonOutcome(selectContainers(toolArguments));
     }
@@ -323,10 +332,10 @@ export function cannedPlatformToolResult(name: string, toolArguments: Record<str
         return toJsonOutcome(job);
     }
     if (name === 'start_container' || name === 'stop_container' || name === 'restart_container') {
-        return cannedContainerAction(name, String(toolArguments.container));
+        return cannedContainerAction(name, String(toolArguments.container), caseMemory);
     }
     if (name === 'delete_container') {
-        return cannedDeleteContainer(String(toolArguments.container));
+        return cannedDeleteContainer(String(toolArguments.container), caseMemory);
     }
     if (name === 'create_container') {
         return cannedCreateContainer(toolArguments);
@@ -349,7 +358,7 @@ function containerNotFound(wanted: string): ToolCallOutcome {
 }
 
 /** The action tools' one-line result (`render-container-action-result-text.ts`), with the state the action leaves behind. */
-function cannedContainerAction(name: string, wanted: string): ToolCallOutcome {
+function cannedContainerAction(name: string, wanted: string, caseMemory: CannedPlatformCaseMemory): ToolCallOutcome {
     const container: ContainerToolSummary | undefined = findContainer(wanted);
     if (container === undefined) {
         return containerNotFound(wanted);
@@ -359,6 +368,7 @@ function cannedContainerAction(name: string, wanted: string): ToolCallOutcome {
     if (name === 'stop_container') {
         action = 'stopped';
         stateNow = 'exited (exit code 0)';
+        caseMemory.stoppedContainerNames.add(container.name);
     } else if (name === 'restart_container') {
         action = 'restarted';
         stateNow = 'running';
@@ -369,13 +379,17 @@ function cannedContainerAction(name: string, wanted: string): ToolCallOutcome {
     return { text: `Container "${container.name}" ${action}. State now: ${stateNow}.`, isError: false };
 }
 
-/** The daemon refuses to remove a running container without force — and the tool never sends force. */
-function cannedDeleteContainer(wanted: string): ToolCallOutcome {
+/**
+ * The daemon refuses to remove a running container without force — and the
+ * tool never sends force. A container stopped earlier in the case is no
+ * longer running (`caseMemory`), so the delete after the stop succeeds.
+ */
+function cannedDeleteContainer(wanted: string, caseMemory: CannedPlatformCaseMemory): ToolCallOutcome {
     const container: ContainerToolSummary | undefined = findContainer(wanted);
     if (container === undefined) {
         return containerNotFound(wanted);
     }
-    if (container.state === 'running') {
+    if (container.state === 'running' && !caseMemory.stoppedContainerNames.has(container.name)) {
         return {
             text: `The Docker daemon refused the request (HTTP 409): cannot remove container "/${container.name}": `
                 + 'container is running: stop the container before removing or force remove',

@@ -9,8 +9,9 @@ import type { ToolChoiceCase } from './interfaces.ts';
  */
 export const ERROR_HANDLING_CASES: ToolChoiceCase[] = [
     {
-        // No container by that name: every path ends in "No such container", and the reply
-        // must carry that, never a stop that did not happen.
+        // No container by that name: whether the model tries the stop (and gets "No such
+        // container") or lists first and finds nothing, the reply must say it is not there —
+        // in whatever words a right answer uses — never a stop that did not happen.
         id: 'stop-unknown-container-reports-not-found',
         category: 'error-handling',
         prompt: 'Stop billing-api.',
@@ -19,7 +20,8 @@ export const ERROR_HANDLING_CASES: ToolChoiceCase[] = [
         reply: {
             mustMention: [
                 'billing-api',
-                ['not found', 'no such container', 'does not exist', "doesn't exist", 'not exist', 'no container', 'could not find', "couldn't find"],
+                ['not found', 'no such container', 'does not exist', "doesn't exist", 'not exist', 'no container', 'could not find', "couldn't find",
+                    'not listed', "don't see a container", 'do not see a container'],
             ],
             mustNotMention: ['has been stopped', 'successfully stopped', 'stopped successfully', 'is now stopped', 'was stopped'],
         },

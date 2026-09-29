@@ -2,6 +2,7 @@ import type { AssertionValueFunctionContext, GradingResult } from 'promptfoo';
 import type { ExecutedToolCall } from '../../src/services/ai-agent/interfaces.ts';
 import type { ToolChoiceCase } from '../cases/interfaces.ts';
 import type { CaseScore } from '../scoring/interfaces.ts';
+import { describeExecutedCalls } from '../scoring/judge-case-verdict.ts';
 import { scoreToolChoiceCase } from '../scoring/score-tool-choice-case.ts';
 import { readToolChoiceCaseOfRow } from './read-tool-choice-case-of-row.ts';
 
@@ -26,7 +27,7 @@ export default function assertToolChoice(_output: string, context: AssertionValu
     }
     const score: CaseScore = scoreToolChoiceCase(testCase, toolCalls);
     if (score.passed) {
-        return { pass: true, score: 1, reason: `called ${describeCalls(toolCalls)}` };
+        return { pass: true, score: 1, reason: `called ${describeExecutedCalls(toolCalls)}` };
     }
     return { pass: false, score: 0, reason: score.problems.join('; ') };
 }
