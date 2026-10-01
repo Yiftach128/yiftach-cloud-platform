@@ -337,6 +337,7 @@ export class ToolCallingChatOrchestrator {
             completedCalls.push({
                 name: call.name,
                 arguments: call.arguments,
+                llmToolCallId: call.id,
                 isError: true,
                 resultText: refusalText,
                 approval: 'not_needed',
