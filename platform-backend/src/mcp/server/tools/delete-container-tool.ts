@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
-import type { DockerManagerService } from '../../../services/docker/docker-manager-service.ts';
+import type { ContainerService } from '../../../services/docker/interfaces.ts';
 import { runToolWithErrorMapping } from '../tool-results-utils/run-tool-with-error-mapping.ts';
 import { toTextToolResult } from '../tool-results-utils/tool-result-builders.ts';
 
@@ -12,7 +12,7 @@ import { toTextToolResult } from '../tool-results-utils/tool-result-builders.ts'
  * stop_container first — a second call the user approves separately — and a
  * named volume outlives its container as it does on the command line.
  */
-export function registerDeleteContainerTool(server: McpServer, docker: DockerManagerService): void {
+export function registerDeleteContainerTool(server: McpServer, docker: ContainerService): void {
     server.registerTool(
         'delete_container',
         {

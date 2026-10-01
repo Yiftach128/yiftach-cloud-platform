@@ -2,8 +2,9 @@
  * Resolves which Docker daemon endpoint to talk to, from explicit options — including
  * a docker CLI style `dockerHost` string ("tcp://127.0.0.1:2375", or
  * "unix:///var/run/docker.sock" for a mounted socket) that the composition root
- * supplies from config. Extracted from the manager so the composition root can derive
- * the ping URL — and pick the daemon lifecycle — without duplicating this logic.
+ * supplies from config. Extracted from the container service so the composition root
+ * can derive the ping URL — and pick the daemon lifecycle — without duplicating this
+ * logic.
  */
 
 import type { DockerEndpoint, ResolveDockerEndpointOptions } from './interfaces.ts';

@@ -1,7 +1,8 @@
 /**
  * Classifies dockerode failures: did the daemon answer and reject the request
- * (engine error), or was it never reached at all (connection error)? The manager
- * uses this to decide between mapping to an API error and booting WSL for a retry.
+ * (engine error), or was it never reached at all (connection error)? The request
+ * runner uses this to decide between mapping to an API error and booting WSL for a
+ * retry.
  */
 
 /**

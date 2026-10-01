@@ -1,8 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
-import type { DockerManagerService } from '../../../services/docker/docker-manager-service.ts';
-import type { Container, ContainerStats, ContainerStatsMap } from '../../../services/docker/interfaces.ts';
+import type { Container, ContainerService, ContainerStats, ContainerStatsMap } from '../../../services/docker/interfaces.ts';
 import type { ContainerStatsToolResult, ContainerStatsToolRow } from '../interfaces.ts';
 import { describeHiddenUnmanagedContainers } from '../tool-results-utils/describe-hidden-unmanaged-containers.ts';
 import { isPlatformManagedContainer } from '../tool-results-utils/is-platform-managed-container.ts';
@@ -19,7 +18,7 @@ import { roundToTwoDecimals, toMebibytes } from '../tool-results-utils/tool-resu
  * shows the platform's own containers by default, like list_containers, so a
  * container never appears in one tool's answer and not the other's.
  */
-export function registerGetContainerStatsTool(server: McpServer, docker: DockerManagerService): void {
+export function registerGetContainerStatsTool(server: McpServer, docker: ContainerService): void {
     server.registerTool(
         'get_container_stats',
         {

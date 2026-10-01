@@ -44,8 +44,8 @@ import { createChatTracerForDirectory } from './services/chat-traces/create-chat
 import { BuildAgentRegistry } from './services/build-agents/build-agent-registry.ts';
 import { BuildJobRegistry } from './services/builds/build-job-registry.ts';
 import { BuildQueueService } from './services/builds/build-queue-service.ts';
+import { DockerContainerService } from './services/docker/docker-container-service.ts';
 import { DockerImageService } from './services/docker/docker-image-service.ts';
-import { DockerManagerService } from './services/docker/docker-manager-service.ts';
 import { ExternalDockerDaemon } from './services/docker/external-docker-daemon.ts';
 import { resolveDockerEndpoint } from './services/docker/resolve-docker-endpoint.ts';
 import { ImagePresetService } from './services/images/image-preset-service.ts';
@@ -72,7 +72,7 @@ const dockerImages = new DockerImageService({
     host: endpoint.host,
     port: endpoint.port,
 });
-const docker = new DockerManagerService({
+const docker = new DockerContainerService({
     daemon: daemon,
     images: dockerImages,
     socketPath: endpoint.socketPath,

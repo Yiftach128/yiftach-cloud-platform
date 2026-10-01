@@ -1,6 +1,6 @@
 import type { Container } from '../../../services/docker/interfaces.ts';
 
-/** The label the platform stamps on every container it creates (`DockerManagerService.createContainer`). */
+/** The label the platform stamps on every container it creates (`DockerContainerService.createContainer`). */
 const MANAGED_LABEL = 'cloudplatform.managed';
 
 /**

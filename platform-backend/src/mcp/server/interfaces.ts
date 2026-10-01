@@ -9,14 +9,12 @@
 import type { BuildAgentRegistry } from '../../services/build-agents/build-agent-registry.ts';
 import type { BuildQueueService } from '../../services/builds/build-queue-service.ts';
 import type { BuildJobStatus } from '../../services/builds/interfaces.ts';
-import type { DockerImageService } from '../../services/docker/docker-image-service.ts';
-import type { DockerManagerService } from '../../services/docker/docker-manager-service.ts';
-import type { ContainerHealthStatus, ContainerState } from '../../services/docker/interfaces.ts';
+import type { ContainerHealthStatus, ContainerService, ContainerState, ImageService } from '../../services/docker/interfaces.ts';
 
 /** The platform services the MCP tools translate onto. */
 export interface PlatformMcpServices {
-    docker: DockerManagerService;
-    images: DockerImageService;
+    docker: ContainerService;
+    images: ImageService;
     builds: BuildQueueService;
     buildAgents: BuildAgentRegistry;
 }

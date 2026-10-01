@@ -1,13 +1,13 @@
 import { Router } from 'express';
 
-import type { DockerManagerService } from '../services/docker/docker-manager-service.ts';
+import type { ContainerService } from '../services/docker/interfaces.ts';
 
 /**
  * POST /containers/:id/stop — stops a container; 204 even when already stopped.
  * `?timeout=<seconds>` overrides the daemon's 10s grace period before the kill.
  * Invalid values are ignored.
  */
-export function postContainerStopRoute(docker: DockerManagerService): Router {
+export function postContainerStopRoute(docker: ContainerService): Router {
     return Router().post('/containers/:id/stop', async (req, res) => {
         let timeoutSeconds: number | undefined = undefined;
         const timeoutRaw = req.query['timeout'];

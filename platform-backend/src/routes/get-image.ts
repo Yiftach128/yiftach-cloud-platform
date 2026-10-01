@@ -1,6 +1,6 @@
 import { Router } from 'express';
 
-import type { DockerImageService } from '../services/docker/docker-image-service.ts';
+import type { ImageService } from '../services/docker/interfaces.ts';
 
 /**
  * GET /images/:id — inspects one platform-built image by id (or URL-encoded
@@ -9,7 +9,7 @@ import type { DockerImageService } from '../services/docker/docker-image-service
  * unknown ids answer 404. Mounted after GET /images/presets, which would
  * otherwise be captured as an id.
  */
-export function getImageRoute(images: DockerImageService): Router {
+export function getImageRoute(images: ImageService): Router {
     return Router().get('/images/:id', async (req, res) => {
         res.json(await images.getManagedImageDetails(req.params.id));
     });

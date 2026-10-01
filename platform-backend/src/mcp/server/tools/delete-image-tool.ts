@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
-import type { DockerImageService } from '../../../services/docker/docker-image-service.ts';
+import type { ImageService } from '../../../services/docker/interfaces.ts';
 import { runToolWithErrorMapping } from '../tool-results-utils/run-tool-with-error-mapping.ts';
 import { toTextToolResult } from '../tool-results-utils/tool-result-builders.ts';
 
@@ -11,7 +11,7 @@ import { toTextToolResult } from '../tool-results-utils/tool-result-builders.ts'
  * label, and never passes force: an image a container still uses is refused
  * by the daemon.
  */
-export function registerDeleteImageTool(server: McpServer, images: DockerImageService): void {
+export function registerDeleteImageTool(server: McpServer, images: ImageService): void {
     server.registerTool(
         'delete_image',
         {

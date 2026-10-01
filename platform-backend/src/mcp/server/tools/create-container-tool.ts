@@ -1,8 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
-import type { DockerManagerService } from '../../../services/docker/docker-manager-service.ts';
-import type { ContainerDetails, CreateContainerOptions } from '../../../services/docker/interfaces.ts';
+import type { ContainerDetails, ContainerService, CreateContainerOptions } from '../../../services/docker/interfaces.ts';
 import { parseCreateContainerRequest } from '../../../services/validation/parse-create-container-request.ts';
 import { mapContainerDetailsToToolView } from '../tool-results-utils/map-container-details-to-tool-view.ts';
 import { runToolWithErrorMapping } from '../tool-results-utils/run-tool-with-error-mapping.ts';
@@ -16,7 +15,7 @@ import { toJsonToolResult } from '../tool-results-utils/tool-result-builders.ts'
  * Answers with the new container's `ContainerToolDetails`, the get_container
  * view.
  */
-export function registerCreateContainerTool(server: McpServer, docker: DockerManagerService): void {
+export function registerCreateContainerTool(server: McpServer, docker: ContainerService): void {
     server.registerTool(
         'create_container',
         {

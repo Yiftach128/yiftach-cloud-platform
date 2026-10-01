@@ -1,13 +1,14 @@
 /**
- * Image acquisition — everything that makes images exist on the daemon from
- * this process: existence checks and registry pulls (image *builds* live in
- * the external builder service, builder-service-backend). Split from the
- * manager because these are the long-running, progress-streaming operations:
- * this service's dockerode client deliberately has no socket timeout
- * (docker-modem only arms one when the `timeout` key is present, and pulls
- * run for minutes), with hung transfers caught by the progress stream's idle
- * watchdog instead. The manager consumes this service through the
- * `DockerImageProvider` interface.
+ * `ImageService` over the Docker Engine API — everything that makes images
+ * exist on the daemon from this process: existence checks and registry pulls
+ * (image *builds* live in the external builder service,
+ * builder-service-backend), plus the list, detail and delete of platform-built
+ * images. Split from the container service because these are the long-running,
+ * progress-streaming operations: this service's dockerode client deliberately
+ * has no socket timeout (docker-modem only arms one when the `timeout` key is
+ * present, and pulls run for minutes), with hung transfers caught by the
+ * progress stream's idle watchdog instead. The container service consumes this
+ * service through the `DockerImageProvider` slice of the interface.
  */
 
 import Docker from 'dockerode';
@@ -19,10 +20,10 @@ import { readImageLabels, readRepoTags, toImageDetails, toImageSummary } from '.
 import { ImageNotManagedError } from './image-not-managed-error.ts';
 import { ImagePullError } from './image-pull-error.ts';
 import type {
-    DockerImageProvider,
     DockerImageServiceOptions,
     ImageDetails,
     ImageExposedPort,
+    ImageService,
     ImageSummary,
 } from './interfaces.ts';
 import { resolveDockerEndpoint } from './resolve-docker-endpoint.ts';
@@ -33,7 +34,7 @@ export * from './image-pull-error.ts';
 /** Label stamped on every image the platform builds; the managed-image operations filter on it. */
 const MANAGED_LABEL = 'cloudplatform.managed';
 
-export class DockerImageService implements DockerImageProvider {
+export class DockerImageService implements ImageService {
     private readonly docker: Docker;
     private readonly requests: DaemonRequestRunner;
 

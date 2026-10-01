@@ -23,11 +23,24 @@ React 19 + TypeScript + Vite, Ant Design.
   (`run`, `format`, `handle`, `helpers`) means it is too short. Files are named after
   their export in kebab-case; a new folder is welcome when it groups a real kind of
   thing (`src/mcp/server/tool-results-utils/`).
+- **An interface is named for what it does; an implementation is a qualifier plus
+  the interface name.** `ContainerService` ← `DockerContainerService`,
+  `ImageService` ← `DockerImageService`, `LlmClient` ← `OllamaLlmClient`,
+  `ToolProvider` ← `McpToolProvider`, `AgentRunTracer` ← `NoOpAgentRunTracer`, the
+  test fakes (`ManualLlmClient`, `RecordingToolProvider`); no `I` prefix, no `Impl`
+  suffix. A consumer is typed by the interface (a route or a tool takes a
+  `ContainerService`) and only a composition root names the class, so a test can
+  stand a fake behind any consumer. Pairs older than the rule stay as they are:
+  `ToolCallApprover` ← `ToolCallApprovalGate`, `AgentRunTracer` ←
+  `JsonLinesChatTracer`, `DockerDaemonLifecycle` ← `WslDockerDaemon` /
+  `ExternalDockerDaemon`, the frontend's `ChatFetcher` ← `ChatFetcherService`; and
+  `DockerImageProvider`, the one-method slice of `ImageService` the container service
+  pulls through, keeps its name.
 - **Always indent with 4 spaces (not 2)** in all hand-written source and config files.
   Exception: `package.json` stays as npm writes it (2 spaces; npm reformats it on
   every install).
 - **Never put a service file directly in `src/`.** Every service lives in a domain
-  folder under `src/services/` (`src/services/docker/docker-manager-service.ts`). Only
+  folder under `src/services/` (`src/services/docker/docker-container-service.ts`). Only
   entry points (`server.ts`, `main.ts`) belong at the `src/` root; startup wiring lives
   in `src/config/config.ts`. The folders beside `services/` are the ways *into* the
   services, not services: `routes/` + `middleware/` (REST, plus `server-sent-events/`
@@ -481,19 +494,22 @@ Events stream.
     "now") and the tool definitions from the current code through the real MCP
     catalog — the loop for fixing a prompt: edit, replay, see whether the model now
     chooses right. Another model's trace replays with a note saying so.
-- `src/services/docker/` — the daemon-facing services. `DockerManagerService` is the
-  typed facade for container operations. `DockerImageService` owns pulls and the
+- `src/services/docker/` — the daemon-facing services. `DockerContainerService` is
+  the typed facade for container operations; `DockerImageService` owns pulls and the
   list/detail/delete of platform-built images (labeled `cloudplatform.managed=true`).
+  The routes and the MCP tools see them as `ContainerService` and `ImageService`
+  (`interfaces.ts`); only the composition roots construct the classes.
   `GET /images/:id` serves the inspect-backed `ImageDetails` (exposed ports,
   provenance labels), 409 for unmanaged images, its `sizeBytes` from the list
   endpoint so it matches the images table (containerd-store inspect reports
   compressed size).
   Deletes never pass force, so the daemon refuses in-use images. `DockerImageService`
   has its own timeout-less dockerode client, since pulls run for minutes; hung streams are caught
-  by `drain-progress-stream.ts`'s idle watchdog. The manager consumes it through
-  `DockerImageProvider`. Both run every daemon request through `DaemonRequestRunner`,
-  which boots the daemon via the lifecycle and retries once on connection failure;
-  stream draining stays outside it, never retried. Public types in `interfaces.ts`;
+  by `drain-progress-stream.ts`'s idle watchdog. The container service consumes it
+  through `DockerImageProvider`. Both run every daemon request through
+  `DaemonRequestRunner`, which boots the daemon via the lifecycle and retries once
+  on connection failure; stream draining stays outside it, never retried. Public
+  types in `interfaces.ts`;
   dockerode wire shapes are quarantined in `container-mapper.ts`, `image-mapper.ts`,
   `classify-dockerode-error.ts` and `drain-progress-stream.ts`. Image *builds* belong
   to the builder service. `resolve-docker-endpoint.ts` accepts `tcp://host:port`, the
@@ -815,8 +831,8 @@ files use `.tsx`).
   that grows rules of its own gets its own test.
 - **Not covered, by decision:** the composition roots (`server.ts`, `config.ts`,
   `main.ts`); `WslDockerDaemon` (it spawns `wsl.exe`); the dockerode calls inside
-  `DockerManagerService` and `DockerImageService` — their logic is in the mappers, which
-  are covered; Express, the MCP SDK's transports and axios themselves. Testing those
+  `DockerContainerService` and `DockerImageService` — their logic is in the mappers,
+  which are covered; Express, the MCP SDK's transports and axios themselves. Testing those
   means running the real thing behind them: integration testing, a separate decision not
   yet made. Wire code we wrote ourselves (`OllamaLlmClient` on `fetch`, the NDJSON
   reader) *is* covered, against a stand-in server started by the test on `127.0.0.1:0`.

@@ -1,8 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
-import type { DockerManagerService } from '../../../services/docker/docker-manager-service.ts';
-import type { Container, ContainerState, GetContainersOptions } from '../../../services/docker/interfaces.ts';
+import type { Container, ContainerService, ContainerState, GetContainersOptions } from '../../../services/docker/interfaces.ts';
 import type { ContainerListToolResult, ContainerToolSummary } from '../interfaces.ts';
 import { describeHiddenUnmanagedContainers } from '../tool-results-utils/describe-hidden-unmanaged-containers.ts';
 import { isPlatformManagedContainer } from '../tool-results-utils/is-platform-managed-container.ts';
@@ -21,7 +20,7 @@ const CONTAINER_STATES = ['created', 'restarting', 'running', 'removing', 'pause
  * not conclude that nothing is running. The state filter runs in the daemon;
  * the managed split happens here, because the hidden count needs both halves.
  */
-export function registerListContainersTool(server: McpServer, docker: DockerManagerService): void {
+export function registerListContainersTool(server: McpServer, docker: ContainerService): void {
     server.registerTool(
         'list_containers',
         {

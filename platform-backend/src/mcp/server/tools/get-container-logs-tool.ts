@@ -1,8 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
-import type { DockerManagerService } from '../../../services/docker/docker-manager-service.ts';
-import type { ContainerLogLine, ContainerLogs } from '../../../services/docker/interfaces.ts';
+import type { ContainerLogLine, ContainerLogs, ContainerService } from '../../../services/docker/interfaces.ts';
 import { runToolWithErrorMapping } from '../tool-results-utils/run-tool-with-error-mapping.ts';
 import { toTextToolResult } from '../tool-results-utils/tool-result-builders.ts';
 
@@ -19,7 +18,7 @@ const TIMESTAMP_SECONDS_LENGTH = 19;
  * (the GET /containers/:id/logs counterpart). Text rather than JSON on purpose:
  * it costs roughly half the tokens per line.
  */
-export function registerGetContainerLogsTool(server: McpServer, docker: DockerManagerService): void {
+export function registerGetContainerLogsTool(server: McpServer, docker: ContainerService): void {
     server.registerTool(
         'get_container_logs',
         {

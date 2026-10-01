@@ -1,8 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
-import type { DockerManagerService } from '../../../services/docker/docker-manager-service.ts';
-import type { ContainerDetails } from '../../../services/docker/interfaces.ts';
+import type { ContainerDetails, ContainerService } from '../../../services/docker/interfaces.ts';
 import { renderContainerActionResultText } from '../tool-results-utils/render-container-action-result-text.ts';
 import { runToolWithErrorMapping } from '../tool-results-utils/run-tool-with-error-mapping.ts';
 import { toTextToolResult } from '../tool-results-utils/tool-result-builders.ts';
@@ -12,7 +11,7 @@ import { toTextToolResult } from '../tool-results-utils/tool-result-builders.ts'
  * POST /containers/:id/restart counterpart). Destructive: the service goes
  * down for the duration. Not idempotent: every call restarts again.
  */
-export function registerRestartContainerTool(server: McpServer, docker: DockerManagerService): void {
+export function registerRestartContainerTool(server: McpServer, docker: ContainerService): void {
     server.registerTool(
         'restart_container',
         {

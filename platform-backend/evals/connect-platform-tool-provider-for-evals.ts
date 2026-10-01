@@ -3,8 +3,8 @@ import type { McpToolProvider } from '../src/mcp/client/mcp-tool-provider.ts';
 import { BuildAgentRegistry } from '../src/services/build-agents/build-agent-registry.ts';
 import { BuildJobRegistry } from '../src/services/builds/build-job-registry.ts';
 import { BuildQueueService } from '../src/services/builds/build-queue-service.ts';
+import { DockerContainerService } from '../src/services/docker/docker-container-service.ts';
 import { DockerImageService } from '../src/services/docker/docker-image-service.ts';
-import { DockerManagerService } from '../src/services/docker/docker-manager-service.ts';
 import { ExternalDockerDaemon } from '../src/services/docker/external-docker-daemon.ts';
 import { resolveDockerEndpoint } from '../src/services/docker/resolve-docker-endpoint.ts';
 
@@ -31,7 +31,7 @@ export async function connectPlatformToolProviderForEvals(dockerHost: string): P
         host: endpoint.host,
         port: endpoint.port,
     });
-    const docker = new DockerManagerService({
+    const docker = new DockerContainerService({
         daemon: daemon,
         images: images,
         socketPath: endpoint.socketPath,

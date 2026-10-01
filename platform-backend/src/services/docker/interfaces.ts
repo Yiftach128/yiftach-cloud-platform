@@ -1,5 +1,7 @@
 /**
- * Public types for the Docker manager service.
+ * Public types for the Docker services: the two service interfaces the routes and
+ * the MCP tools depend on (`ContainerService`, `ImageService`), what they take and
+ * answer, and the seams the services themselves depend on.
  *
  * dockerode's raw wire shapes never appear here — callers only ever see these types,
  * so the transport library can change without rippling outwards.
@@ -238,7 +240,7 @@ export interface DockerEndpoint {
  * dockerHost string.
  */
 export interface ResolveDockerEndpointOptions
-    extends Pick<DockerManagerOptions, 'socketPath' | 'host' | 'port' | 'protocol' | 'ca' | 'cert' | 'key'> {
+    extends Pick<DockerContainerServiceOptions, 'socketPath' | 'host' | 'port' | 'protocol' | 'ca' | 'cert' | 'key'> {
     /**
      * Docker CLI style endpoint ("tcp://127.0.0.1:2375" or
      * "unix:///var/run/docker.sock"), consulted when socketPath/host/port are not
@@ -249,8 +251,8 @@ export interface ResolveDockerEndpointOptions
 }
 
 /**
- * The slice of a daemon lifecycle the manager depends on — kept as an interface so
- * the manager never imports a concrete (platform-specific) implementation. The WSL
+ * The slice of a daemon lifecycle the services depend on — kept as an interface so
+ * they never import a concrete (platform-specific) implementation. The WSL
  * implementation lives in `src/services/wsl/`; `ExternalDockerDaemon` in this folder
  * is the do-nothing one for a daemon somebody else keeps running (unix socket).
  */
@@ -260,8 +262,8 @@ export interface DockerDaemonLifecycle {
 }
 
 /**
- * The slice of image acquisition the manager depends on — kept as an interface
- * (like {@link DockerDaemonLifecycle}) so the manager never imports the concrete
+ * The slice of image acquisition the container service depends on — kept as an
+ * interface (like {@link DockerDaemonLifecycle}) so it never imports the concrete
  * image service. Implemented by `DockerImageService` in this folder.
  */
 export interface DockerImageProvider {
@@ -269,7 +271,39 @@ export interface DockerImageProvider {
     ensureImageExists(reference: string): Promise<void>;
 }
 
-export interface DockerManagerOptions {
+/**
+ * Container operations as the routes and the MCP tools see them — the contract
+ * they depend on, so a test can stand a fake behind them. Implemented by
+ * `DockerContainerService` in this folder; the method docs live there.
+ */
+export interface ContainerService {
+    /** Endpoint the containers live on, e.g. "http://127.0.0.1:2375" or "unix:///var/run/docker.sock". For logging and the health probe. */
+    readonly baseUrl: string;
+    getContainers(options?: GetContainersOptions): Promise<Container[]>;
+    getContainersStats(): Promise<ContainerStatsMap>;
+    getContainerById(id: string): Promise<ContainerDetails>;
+    createContainer(options: CreateContainerOptions): Promise<ContainerDetails>;
+    deleteContainer(id: string, options?: DeleteContainerOptions): Promise<void>;
+    startContainer(id: string): Promise<void>;
+    stopContainer(id: string, options?: StopContainerOptions): Promise<void>;
+    restartContainer(id: string, options?: RestartContainerOptions): Promise<void>;
+    getContainerLogs(id: string, options?: GetContainerLogsOptions): Promise<ContainerLogs>;
+}
+
+/**
+ * Image operations as the routes and the MCP tools see them: the pull the
+ * container service needs ({@link DockerImageProvider}) plus the list, detail and
+ * delete of platform-built images. Implemented by `DockerImageService` in this
+ * folder; the method docs live there.
+ */
+export interface ImageService extends DockerImageProvider {
+    getManagedImages(): Promise<ImageSummary[]>;
+    getManagedImageDetails(id: string): Promise<ImageDetails>;
+    getImageExposedPorts(reference: string): Promise<ImageExposedPort[]>;
+    deleteManagedImage(id: string): Promise<void>;
+}
+
+export interface DockerContainerServiceOptions {
     /**
      * Unix socket to reach the daemon over (e.g. "/var/run/docker.sock"). When set,
      * host/port/protocol and the TLS material are unused.
@@ -293,7 +327,7 @@ export interface DockerManagerOptions {
     cert?: string | Buffer;
     key?: string | Buffer;
     /**
-     * Lifecycle hook used when a request finds the daemon dead: the manager calls
+     * Lifecycle hook used when a request finds the daemon dead: the service calls
      * `ensureRunning()` and retries the request once.
      */
     daemon?: DockerDaemonLifecycle;
@@ -307,13 +341,13 @@ export interface DockerManagerOptions {
 
 /**
  * Options for the image service. The endpoint fields mirror
- * {@link DockerManagerOptions} so both services resolve the same daemon; there is
- * deliberately no `requestTimeoutMs` — pulls and builds legitimately run for
- * minutes, so the image service's client has no socket timeout at all (hung
+ * {@link DockerContainerServiceOptions} so both services resolve the same daemon;
+ * there is deliberately no `requestTimeoutMs` — pulls and builds legitimately run
+ * for minutes, so the image service's client has no socket timeout at all (hung
  * transfers are caught by the progress stream's idle watchdog instead).
  */
 export interface DockerImageServiceOptions {
-    /** Unix socket to reach the daemon over (see {@link DockerManagerOptions}). */
+    /** Unix socket to reach the daemon over (see {@link DockerContainerServiceOptions}). */
     socketPath?: string;
     /** Defaults to 127.0.0.1; the composition root passes the configured endpoint. */
     host?: string;
@@ -323,7 +357,7 @@ export interface DockerImageServiceOptions {
     protocol?: 'http' | 'https';
     /** Pinned Engine API version, e.g. "v1.55". Omit to use the daemon's default. */
     apiVersion?: string;
-    /** mTLS material for a `--tlsverify` daemon on 2376 (see {@link DockerManagerOptions}). */
+    /** mTLS material for a `--tlsverify` daemon on 2376 (see {@link DockerContainerServiceOptions}). */
     ca?: string | Buffer;
     cert?: string | Buffer;
     key?: string | Buffer;

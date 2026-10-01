@@ -1,5 +1,6 @@
 /**
- * Docker manager — a typed facade over the Docker Engine API, backed by dockerode.
+ * `ContainerService` over the Docker Engine API, backed by dockerode — the typed
+ * facade for container operations.
  *
  * The daemon runs inside WSL2 Ubuntu and is reached over TCP. It must be bound to an
  * IPv4 address: WSL2's localhost relay only forwards listeners it sees in /proc/net/tcp,
@@ -21,12 +22,13 @@ import type {
     Container,
     ContainerDetails,
     ContainerLogs,
+    ContainerService,
     ContainerStats,
     ContainerStatsMap,
     CreateContainerOptions,
     DeleteContainerOptions,
+    DockerContainerServiceOptions,
     DockerImageProvider,
-    DockerManagerOptions,
     GetContainerLogsOptions,
     GetContainersOptions,
     RestartContainerOptions,
@@ -45,14 +47,13 @@ export * from './interfaces.ts';
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_LOG_TAIL = 500;
 
-export class DockerManagerService {
-    /** Endpoint this instance talks to, e.g. "http://127.0.0.1:2375" or "unix:///var/run/docker.sock". For logging and errors. */
+export class DockerContainerService implements ContainerService {
     readonly baseUrl: string;
     private readonly docker: Docker;
     private readonly requests: DaemonRequestRunner;
     private readonly images: DockerImageProvider | undefined;
 
-    constructor(options: DockerManagerOptions = {}) {
+    constructor(options: DockerContainerServiceOptions = {}) {
         const endpoint = resolveDockerEndpoint(options);
 
         this.baseUrl = endpoint.baseUrl;

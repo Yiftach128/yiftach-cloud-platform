@@ -1,8 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
-import type { DockerImageService } from '../../../services/docker/docker-image-service.ts';
-import type { ImageDetails } from '../../../services/docker/interfaces.ts';
+import type { ImageDetails, ImageService } from '../../../services/docker/interfaces.ts';
 import { runToolWithErrorMapping } from '../tool-results-utils/run-tool-with-error-mapping.ts';
 import { toJsonToolResult } from '../tool-results-utils/tool-result-builders.ts';
 
@@ -11,7 +10,7 @@ import { toJsonToolResult } from '../tool-results-utils/tool-result-builders.ts'
  * counterpart). Like the route, it serves only images carrying the managed
  * label; anything else comes back as a tool error.
  */
-export function registerGetImageTool(server: McpServer, images: DockerImageService): void {
+export function registerGetImageTool(server: McpServer, images: ImageService): void {
     server.registerTool(
         'get_image',
         {

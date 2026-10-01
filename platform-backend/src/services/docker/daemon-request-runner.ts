@@ -7,8 +7,8 @@ import type { DockerDaemonLifecycle } from './interfaces.ts';
  * Runs dockerode requests with the daemon self-healing behaviour every service in
  * this folder shares: when a request fails because the daemon was unreachable, ask
  * the lifecycle to bring it up (booting WSL if needed) and retry once. Extracted
- * from the manager so services holding their own dockerode client (the image
- * service) do not duplicate the retry and error mapping.
+ * from the container service so services holding their own dockerode client (the
+ * image service) do not duplicate the retry and error mapping.
  */
 export class DaemonRequestRunner {
     private readonly daemon: DockerDaemonLifecycle | undefined;

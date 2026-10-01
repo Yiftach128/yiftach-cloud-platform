@@ -1,6 +1,6 @@
 import { Router } from 'express';
 
-import type { DockerManagerService } from '../services/docker/docker-manager-service.ts';
+import type { ContainerService } from '../services/docker/interfaces.ts';
 
 /**
  * GET /containers/:id/logs — a snapshot of the container's log; every line
@@ -9,7 +9,7 @@ import type { DockerManagerService } from '../services/docker/docker-manager-ser
  * logged at or after that time — pass a previous line's `timestamp` verbatim to
  * poll for what came next. Invalid values are ignored.
  */
-export function getContainerLogsRoute(docker: DockerManagerService): Router {
+export function getContainerLogsRoute(docker: ContainerService): Router {
     return Router().get('/containers/:id/logs', async (req, res) => {
         let tail: number | 'all' | undefined = undefined;
         const tailRaw = req.query['tail'];

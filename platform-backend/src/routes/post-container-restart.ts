@@ -1,13 +1,13 @@
 import { Router } from 'express';
 
-import type { DockerManagerService } from '../services/docker/docker-manager-service.ts';
+import type { ContainerService } from '../services/docker/interfaces.ts';
 
 /**
  * POST /containers/:id/restart — restarts a container (stops it first when running).
  * `?timeout=<seconds>` overrides the daemon's 10s grace period for the stop phase.
  * Invalid values are ignored.
  */
-export function postContainerRestartRoute(docker: DockerManagerService): Router {
+export function postContainerRestartRoute(docker: ContainerService): Router {
     return Router().post('/containers/:id/restart', async (req, res) => {
         let timeoutSeconds: number | undefined = undefined;
         const timeoutRaw = req.query['timeout'];

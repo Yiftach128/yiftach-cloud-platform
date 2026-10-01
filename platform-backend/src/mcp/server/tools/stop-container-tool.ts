@@ -1,8 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
-import type { DockerManagerService } from '../../../services/docker/docker-manager-service.ts';
-import type { ContainerDetails } from '../../../services/docker/interfaces.ts';
+import type { ContainerDetails, ContainerService } from '../../../services/docker/interfaces.ts';
 import { renderContainerActionResultText } from '../tool-results-utils/render-container-action-result-text.ts';
 import { runToolWithErrorMapping } from '../tool-results-utils/run-tool-with-error-mapping.ts';
 import { toTextToolResult } from '../tool-results-utils/tool-result-builders.ts';
@@ -13,7 +12,7 @@ import { toTextToolResult } from '../tool-results-utils/tool-result-builders.ts'
  * the container serves goes down. Idempotent: stopping a stopped container
  * changes nothing.
  */
-export function registerStopContainerTool(server: McpServer, docker: DockerManagerService): void {
+export function registerStopContainerTool(server: McpServer, docker: ContainerService): void {
     server.registerTool(
         'stop_container',
         {
