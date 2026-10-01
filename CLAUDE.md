@@ -843,7 +843,9 @@ files use `.tsx`).
   advance. No clock is injected into production code, and no test sleeps.
 - **Routes and middleware are tested over HTTP in-process:** the router under test is
   mounted with `express.json()` and the real `error-handler.ts` on an app listening on
-  port 0, called with `fetch`, its services faked; the mounting order is `server.ts`'s.
+  port 0, called with `fetch`, its services faked; the mounting order is `server.ts`'s
+  (`test/routes/http-app-under-test.ts`). The one exception is the host check, called
+  through `node:http`: `fetch` silently drops a `Host` header set by the caller.
   The MCP tools are called through a real in-memory MCP client
   (`connectInProcessMcpToolProvider`) over fake services, so a test reads the result
   exactly as a model would.
