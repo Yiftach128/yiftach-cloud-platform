@@ -235,8 +235,9 @@ Events stream.
   connected SDK `Client` to the agent's `ToolProvider`: `readOnly` from
   `readOnlyHint` (absent → not read-only), `destructive` from `destructiveHint`
   (absent → true, the spec's default), the server's `instructions` as usage
-  guidance, and both failure surfaces (`isError` results and thrown protocol errors
-  such as schema-rejected arguments) returned in band.
+  guidance, and both failure surfaces returned in band: `isError` results (a tool's
+  mapped error, and the SDK server's own answer to schema-rejected arguments) and
+  thrown protocol errors (an unknown tool name).
   `connect-in-process-mcp-tool-provider.ts` links it to a fresh
   `createPlatformMcpServer` over the SDK's `InMemoryTransport` pair, so the built-in
   agent uses the catalog external clients get at `/mcp`; `server.ts` and the evals
