@@ -884,6 +884,10 @@ files use `.tsx`).
   checks the bundle.
 - Unit tests: `npm test` in `platform-backend/` or `builder-service-backend/`, with no
   Ollama, Docker or WSL. Run with the typecheck after any change under `src/`.
+- CI: `.github/workflows/typecheck-test-and-build.yml` runs on every push, one job per
+  package on Ubuntu with Node 24: `npm ci`, then typecheck + `npm test` for each
+  backend, `npm run lint` (oxlint) + `npm run build` for the frontend. No Docker,
+  Ollama or WSL; the evals stay a local run (they need a model server and a GPU).
 - AI agent: `npm run eval` from `platform-backend/` after any change to the loop,
   the prompt, a tool's name/description/schema or the model. Needs Ollama with the
   config's models pulled, not Docker; 20 s a case on a 4B model, 12 minutes a model,

@@ -1,0 +1,74 @@
+# The checks every push must pass, the same commands as on a developer machine
+# (see "Verification" in CLAUDE.md), run on a clean Linux machine:
+#
+#     platform-backend          typecheck, unit tests
+#     builder-service-backend   typecheck, unit tests
+#     frontend                  lint, build (the build typechecks first)
+#
+# One job per package, in parallel: the three are standalone npm packages with
+# their own lock files (no workspaces). None of it needs Docker, Ollama or WSL —
+# the unit tests fake all three. The assistant's evals are not run here: they
+# need a model server and a GPU.
+
+name: Typecheck, test and build
+
+on:
+    push:
+
+permissions:
+    contents: read
+
+jobs:
+    platform-backend:
+        name: Platform backend (typecheck, unit tests)
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        defaults:
+            run:
+                working-directory: platform-backend
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 24
+                  cache: npm
+                  cache-dependency-path: platform-backend/package-lock.json
+            - run: npm ci
+            - run: npm run typecheck
+            - run: npm test
+
+    builder-service-backend:
+        name: Builder service (typecheck, unit tests)
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        defaults:
+            run:
+                working-directory: builder-service-backend
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 24
+                  cache: npm
+                  cache-dependency-path: builder-service-backend/package-lock.json
+            - run: npm ci
+            - run: npm run typecheck
+            - run: npm test
+
+    frontend:
+        name: Frontend (lint, build)
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        defaults:
+            run:
+                working-directory: frontend
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 24
+                  cache: npm
+                  cache-dependency-path: frontend/package-lock.json
+            - run: npm ci
+            - run: npm run lint
+            - run: npm run build
