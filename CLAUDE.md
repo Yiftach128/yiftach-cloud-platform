@@ -590,9 +590,9 @@ container → report, then poll again.
   provenance `cloudplatform.repo-url`, `.git-ref` (only when a `#ref` was given),
   `.commit` and `.build-job-id`; `frontend/src/components/image-details.tsx` reads
   them, so keep the names in sync. The daemon never runs git.
-  `drain-progress-stream.ts` and `decode-buildkit-log-line.ts` are deliberate copies
-  of the platform's; `drain-progress-stream.ts` exists in both packages
-  **byte-identically** (no workspaces), so edits must touch both.
+  `drain-progress-stream.ts` is a deliberate copy of the platform's, in both packages
+  **byte-identically** (no workspaces), so edits must touch both, its test and
+  `ManualProgressFeed` included; `decode-buildkit-log-line.ts` lives only here.
 - `src/services/worker/` — `BuildWorker` (the serial loop; always deletes the clone
   workspace in `finally`); `LogBatcher` (flushes log lines to the platform about once
   a second; records a 404 instead of throwing from the timer); `PortResolver` (a job
@@ -819,7 +819,8 @@ files use `.tsx`).
 - **A test exercises one module alone**, built by hand as `server.ts` or `main.ts` would
   build it, with a fake behind every interface it imports from another folder: never
   Ollama, Docker, WSL, git, the platform API, a real timer or the disk (a temp folder
-  for the static frontend). Its own folder's in-memory classes are used for real
+  for the static frontend and for the build worker's clone workspaces, made and
+  removed by its harness). Its own folder's in-memory classes are used for real
   (`AiAgentChatService` runs the real orchestrator and gate over a fake `LlmClient`;
   `BuildQueueService` the real `BuildJobRegistry`). Every test pins one rule the
   module enforces — a budget, a refusal, an ordering — and would fail if that rule were
@@ -838,16 +839,23 @@ files use `.tsx`).
   does not re-implement the daemon's refusals, a test hands it the 409 to throw. A fake
   that grows rules of its own gets its own test.
 - **Not covered, by decision:** the composition roots (`server.ts`, `config.ts`,
-  `main.ts`); `WslDockerDaemon` (it spawns `wsl.exe`); the dockerode calls inside
+  `main.ts`); `WslDockerDaemon` (it spawns `wsl.exe`) and the builder's
+  `GitRepositoryCloneService` (it spawns `git`); the dockerode calls inside
   `DockerContainerService` and `DockerImageService` — their logic is in the mappers,
-  which are covered; Express, the MCP SDK's transports and axios themselves. Testing those
-  means running the real thing behind them: integration testing, a separate decision not
-  yet made. Wire code we wrote ourselves (`OllamaLlmClient` on `fetch`, the NDJSON
-  reader) *is* covered, against a stand-in server started by the test on `127.0.0.1:0`.
+  which are covered — and the dockerode and tar calls inside the builder's
+  `DockerImageBuilderService`; Express, the MCP SDK's transports and axios themselves.
+  Testing those means running the real thing behind them: integration testing, a
+  separate decision not yet made. Wire code we wrote ourselves (`OllamaLlmClient` on
+  `fetch`, the NDJSON reader, and what the builder's `HttpPlatformApiClient` makes of
+  the platform's answers) *is* covered, against a stand-in server started by the test
+  on `127.0.0.1:0`.
   Also left out: `chat-traces/` — glue over `node:fs` for a developer tool that is off
   in compose, with its record format held by the shared `interfaces.ts` types that
-  `replay-recorded-model-call.ts` reads; and the pass-through routes (one service call,
-  one status), whose rules live in the parsers, the services and the error handler.
+  `replay-recorded-model-call.ts` reads; the pass-through routes (one service call,
+  one status), whose rules live in the parsers, the services and the error handler;
+  and the build worker's wait between polls — `mock.timers` does not reach a
+  `setTimeout` imported by name from `node:timers/promises`, so its tests stop the
+  worker while the one task is being claimed and the poll never runs.
 - **Time is faked, never waited for:** anything on `Date.now`, `setTimeout` or
   `setInterval` (the sweeper, the registries' staleness, the idle watchdogs, the log
   batcher) runs under `node:test`'s `mock.timers`, so a 30-minute expiry is a one-line
