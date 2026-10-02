@@ -9,8 +9,12 @@
  * unique per port/protocol and only "tcp" survives the filter.
  */
 
-import type { ContainerSummary, ImageExposedPort, PortMapping } from '../platform/interfaces.ts';
-import { PlatformApiClient } from '../platform/platform-api-client.ts';
+import type {
+    ContainerSummary,
+    ImageExposedPort,
+    PlatformApiClient,
+    PortMapping,
+} from '../platform/interfaces.ts';
 
 const MAX_PORT = 65535;
 

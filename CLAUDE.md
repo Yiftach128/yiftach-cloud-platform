@@ -27,9 +27,12 @@ React 19 + TypeScript + Vite, Ant Design.
   the interface name.** `ContainerService` ← `DockerContainerService`,
   `ImageService` ← `DockerImageService`, `LlmClient` ← `OllamaLlmClient`,
   `ToolProvider` ← `McpToolProvider`, `AgentRunTracer` ← `NoOpAgentRunTracer`, the
-  test fakes (`ManualLlmClient`, `RecordingToolProvider`); no `I` prefix, no `Impl`
+  builder's `PlatformApiClient` ← `HttpPlatformApiClient`, `RepositoryCloneService` ←
+  `GitRepositoryCloneService` and `ImageBuilderService` ← `DockerImageBuilderService`,
+  the test fakes (`ManualLlmClient`, `RecordingToolProvider`); no `I` prefix, no `Impl`
   suffix. A consumer is typed by the interface (a route or a tool takes a
-  `ContainerService`) and only a composition root names the class, so a test can
+  `ContainerService`, the build worker a `PlatformApiClient`) and only a composition
+  root names the class, so a test can
   stand a fake behind any consumer. Pairs older than the rule stay as they are:
   `ToolCallApprover` ← `ToolCallApprovalGate`, `AgentRunTracer` ←
   `JsonLinesChatTracer`, `DockerDaemonLifecycle` ← `WslDockerDaemon` /
@@ -569,15 +572,19 @@ container → report, then poll again.
   `DOCKER_SOCKET_PATH` or else `DOCKER_HOST_NAME`/`DOCKER_HOST_PORT`, the other side
   `undefined`), `POLL_INTERVAL_MS`, `WORKSPACE_DIR`, `GIT_CLONE_TIMEOUT_MS`,
   `AGENT_NAME` (defaults to the machine hostname), `HEARTBEAT_INTERVAL_MS`.
-- `src/services/platform/` — `PlatformApiClient`, the only door to the platform API
-  (axios, styled after the frontend's `DockerFetcherService`; axios never leaks). A
-  404 on a job-scoped call becomes `BuildJobLostError`, the single abandon signal
-  (the platform restarted and forgot the job).
-- `src/services/git/` — `GitCloneService` shallow-clones with the git CLI
+- `src/services/platform/` — `HttpPlatformApiClient`, the only door to the platform
+  API (axios, styled after the frontend's `DockerFetcherService`; axios never leaks).
+  A 404 on a job-scoped call becomes `BuildJobLostError`, the single abandon signal
+  (the platform restarted and forgot the job). The worker sees it as
+  `PlatformApiClient`; each of these three folders keeps its interface in its
+  `interfaces.ts`, and only `main.ts` constructs the classes.
+- `src/services/git/` — `GitRepositoryCloneService` (the worker's
+  `RepositoryCloneService`) shallow-clones with the git CLI
   (`--depth 1 --single-branch --no-tags`, prompts disabled, `--` before the URL,
   killed at `GIT_CLONE_TIMEOUT_MS`) and reads HEAD (`readHeadCommit`, via
   `git rev-parse`). The builder's host needs `git` on PATH.
-- `src/services/docker/` — `ImageBuilderService` streams the clone (minus `.git`) to
+- `src/services/docker/` — `DockerImageBuilderService` (the worker's
+  `ImageBuilderService`) streams the clone (minus `.git`) to
   the daemon as a tar build context (BuildKit, `version: '2'`), labeled
   `cloudplatform.managed=true` plus the caller's `extraLabels`. The worker passes the
   provenance `cloudplatform.repo-url`, `.git-ref` (only when a `#ref` was given),
@@ -812,7 +819,7 @@ files use `.tsx`).
 - **A test exercises one module alone**, built by hand as `server.ts` or `main.ts` would
   build it, with a fake behind every interface it imports from another folder: never
   Ollama, Docker, WSL, git, the platform API, a real timer or the disk (a temp folder
-  for `chat-traces/`). Its own folder's in-memory classes are used for real
+  for the static frontend). Its own folder's in-memory classes are used for real
   (`AiAgentChatService` runs the real orchestrator and gate over a fake `LlmClient`;
   `BuildQueueService` the real `BuildJobRegistry`). Every test pins one rule the
   module enforces — a budget, a refusal, an ordering — and would fail if that rule were
@@ -837,6 +844,10 @@ files use `.tsx`).
   means running the real thing behind them: integration testing, a separate decision not
   yet made. Wire code we wrote ourselves (`OllamaLlmClient` on `fetch`, the NDJSON
   reader) *is* covered, against a stand-in server started by the test on `127.0.0.1:0`.
+  Also left out: `chat-traces/` — glue over `node:fs` for a developer tool that is off
+  in compose, with its record format held by the shared `interfaces.ts` types that
+  `replay-recorded-model-call.ts` reads; and the pass-through routes (one service call,
+  one status), whose rules live in the parsers, the services and the error handler.
 - **Time is faked, never waited for:** anything on `Date.now`, `setTimeout` or
   `setInterval` (the sweeper, the registries' staleness, the idle watchdogs, the log
   batcher) runs under `node:test`'s `mock.timers`, so a 30-minute expiry is a one-line

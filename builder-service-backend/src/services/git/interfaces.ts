@@ -17,3 +17,11 @@ export interface CloneRepositoryOptions {
     /** Hard cap on the whole clone (milliseconds); the process is killed past it. */
     timeoutMs: number;
 }
+
+/** Fetches a repository's content into a workspace directory and says which commit it got. */
+export interface RepositoryCloneService {
+    /** Clones the repository into the target directory; rejects when the clone fails or times out. */
+    cloneRepository(options: CloneRepositoryOptions): Promise<void>;
+    /** HEAD commit hash of an already-cloned repository. */
+    readHeadCommit(options: ReadHeadCommitOptions): Promise<string>;
+}

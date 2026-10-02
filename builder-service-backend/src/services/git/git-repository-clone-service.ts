@@ -11,12 +11,16 @@ import { spawn } from 'node:child_process';
 
 import { GitCloneError } from './git-clone-error.ts';
 import { GitRevParseError } from './git-rev-parse-error.ts';
-import type { CloneRepositoryOptions, ReadHeadCommitOptions } from './interfaces.ts';
+import type {
+    CloneRepositoryOptions,
+    ReadHeadCommitOptions,
+    RepositoryCloneService,
+} from './interfaces.ts';
 
 /** Only the tail of stderr is kept — git progress can be long, the error is at the end. */
 const STDERR_TAIL_CHARS = 2000;
 
-export class GitCloneService {
+export class GitRepositoryCloneService implements RepositoryCloneService {
     public cloneRepository(options: CloneRepositoryOptions): Promise<void> {
         const args: string[] = ['clone', '--depth', '1', '--single-branch', '--no-tags'];
         args.push('-c', 'credential.helper=');

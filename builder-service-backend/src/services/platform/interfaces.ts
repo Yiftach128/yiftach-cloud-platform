@@ -81,3 +81,25 @@ export interface AgentHeartbeatRequest {
     /** ISO 8601 — when the builder process started, so the UI can show uptime. */
     startedAt: string;
 }
+
+/**
+ * The builder's only door to the platform API. A job-scoped call on a job the
+ * platform no longer knows rejects with BuildJobLostError, the abandon signal;
+ * every other failure is a PlatformApiError.
+ */
+export interface PlatformApiClient {
+    /** Claims the oldest queued build; null when the queue is empty. */
+    claimBuildTask(): Promise<BuildTask | null>;
+    /** Reports the agent's liveness and status. */
+    sendAgentHeartbeat(heartbeat: AgentHeartbeatRequest): Promise<void>;
+    /** Appends progress lines to the job's log. Job-scoped. */
+    appendBuildLogs(jobId: string, lines: string[]): Promise<void>;
+    /** Reports the job's terminal status. Job-scoped. */
+    reportBuildResult(jobId: string, result: BuildResultReport): Promise<void>;
+    /** Creates and starts the container from the built image. */
+    createContainer(request: CreateContainerRequest): Promise<void>;
+    /** The ports a locally present image EXPOSEs, by id or reference. */
+    getImageExposedPorts(reference: string): Promise<ImageExposedPort[]>;
+    /** The daemon's container list. */
+    getContainers(): Promise<ContainerSummary[]>;
+}

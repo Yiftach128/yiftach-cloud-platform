@@ -10,8 +10,7 @@
  * by name.
  */
 
-import type { AgentHeartbeatRequest } from '../platform/interfaces.ts';
-import { PlatformApiClient } from '../platform/platform-api-client.ts';
+import type { AgentHeartbeatRequest, PlatformApiClient } from '../platform/interfaces.ts';
 import type { HeartbeatReporterOptions } from './interfaces.ts';
 
 export class HeartbeatReporter {

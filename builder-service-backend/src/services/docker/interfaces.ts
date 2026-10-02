@@ -1,5 +1,5 @@
 /** Docker daemon endpoint for the image builder: a unix socket, or else a TCP host and port. */
-export interface ImageBuilderServiceOptions {
+export interface DockerImageBuilderServiceOptions {
     /** Unix socket to reach the daemon over (e.g. "/var/run/docker.sock"). When set, host and port are unused. */
     socketPath: string | undefined;
     host: string | undefined;
@@ -16,4 +16,10 @@ export interface BuildImageOptions {
     extraLabels: Record<string, string>;
     /** Receives each human-readable build progress line. */
     onProgressLine: (line: string) => void;
+}
+
+/** Builds an image from a workspace directory, labeled as platform-managed. */
+export interface ImageBuilderService {
+    /** Resolves once the image is built and tagged; rejects when the build fails or its progress stream hangs. */
+    buildImage(options: BuildImageOptions): Promise<void>;
 }

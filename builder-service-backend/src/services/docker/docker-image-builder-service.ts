@@ -16,15 +16,19 @@ import * as tar from 'tar';
 import { decodeBuildKitLogLine } from './decode-buildkit-log-line.ts';
 import { drainProgressStream } from './drain-progress-stream.ts';
 import type { FollowProgressFn } from './drain-progress-stream.ts';
-import type { BuildImageOptions, ImageBuilderServiceOptions } from './interfaces.ts';
+import type {
+    BuildImageOptions,
+    DockerImageBuilderServiceOptions,
+    ImageBuilderService,
+} from './interfaces.ts';
 
 /** Label stamped on every image the platform builds; the platform's managed-image operations filter on it. */
 const MANAGED_LABEL = 'cloudplatform.managed';
 
-export class ImageBuilderService {
+export class DockerImageBuilderService implements ImageBuilderService {
     private readonly docker: Docker;
 
-    constructor(options: ImageBuilderServiceOptions) {
+    constructor(options: DockerImageBuilderServiceOptions) {
         if (options.socketPath !== undefined) {
             this.docker = new Docker({
                 socketPath: options.socketPath,

@@ -17,6 +17,7 @@ import type {
     ContainerSummary,
     CreateContainerRequest,
     ImageExposedPort,
+    PlatformApiClient,
 } from './interfaces.ts';
 import { PlatformApiError } from './platform-api-error.ts';
 
@@ -25,7 +26,7 @@ interface ApiErrorBody {
     message: string;
 }
 
-export class PlatformApiClient {
+export class HttpPlatformApiClient implements PlatformApiClient {
     private readonly http: AxiosInstance;
 
     constructor(baseUrl: string) {
