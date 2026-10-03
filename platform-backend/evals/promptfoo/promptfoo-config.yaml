@@ -1,0 +1,99 @@
+# The AI assistant's eval suite, run by Promptfoo (`npm run eval` from
+# platform-backend/). Each provider entry is the whole agent on one model
+# (`promptfoo-agent-provider.ts`); the tests are the eval cases
+# (`promptfoo-tests-from-tool-choice-cases.ts`); every row is scored by
+# `assert-tool-choice.ts` (the calls it made) and `assert-reply-expectation.ts`
+# (what its reply says). Results: providers across, cases down.
+# `file://` paths are relative to this file.
+description: YCP assistant — tool choice and reply, by model
+
+prompts:
+    - '{{prompt}}'
+
+# One entry per column of the results table. Run ONE model per invocation:
+#     npm run eval -- --no-cache --filter-providers granite
+# (a regex on the entry's label or id — pick a part that names one entry:
+# `thinking` alone matches three). With several entries in one run,
+# Promptfoo alternates the providers row by row, which on a card that holds
+# one model is a model swap every case. Two entries of one model differ by a
+# `variant`, which joins the results file name (`<model>+<variant>.json`).
+# The first call of an entry checks that its model is pulled and can call
+# tools, and fails the column with one clear line otherwise.
+providers:
+    - id: file://promptfoo-agent-provider.ts
+      label: qwen3 4B, instruct model
+      config:
+          llm: ollama
+          model: qwen3:4b-instruct-2507-q4_K_M
+    # The baseline's sibling, trained to reason before it answers (thinking
+    # only, no switch). The thought shares the window with the prompt, hence
+    # the wider context; at 12288 the KV cache still fits beside the weights on
+    # a 6 GB card.
+    - id: file://promptfoo-agent-provider.ts
+      label: qwen3 4B, thinking model
+      config:
+          llm: ollama
+          model: qwen3:4b-thinking-2507-q4_K_M
+          contextTokens: 12288
+    # The newer generation, a hybrid: thinking off first, like for like with
+    # the baseline, then on.
+    - id: file://promptfoo-agent-provider.ts
+      label: qwen3.5 4B, thinking off
+      config:
+          llm: ollama
+          model: qwen3.5:4b
+          variant: no-think
+          think: false
+    - id: file://promptfoo-agent-provider.ts
+      label: qwen3.5 4B, thinking on
+      config:
+          llm: ollama
+          model: qwen3.5:4b
+          variant: think
+          think: true
+          contextTokens: 12288
+    # A different vendor, smaller than the baseline: whether the tool
+    # descriptions and the prompt, tuned on qwen, hold up outside the family.
+    - id: file://promptfoo-agent-provider.ts
+      label: granite 4.1 3B
+      config:
+          llm: ollama
+          model: granite4.1:3b
+
+tests: file://promptfoo-tests-from-tool-choice-cases.ts
+
+defaultTest:
+    options:
+        # A case's earlier turns are an array; without this, Promptfoo would
+        # fan the array out into one test per element.
+        disableVarExpansion: true
+    assert:
+        - type: javascript
+          value: file://assert-tool-choice.ts
+        - type: javascript
+          value: file://assert-reply-expectation.ts
+        # A model-graded judge is one more entry here, no code change: every
+        # row carries its case's rubric (or the default one) in the `rubric`
+        # var. A hosted grader, not a local one — the GPU holds one model —
+        # with its API key read from the environment, e.g.:
+        #   - type: llm-rubric
+        #     value: '{{rubric}}'
+        #     provider: anthropic:messages:<model>
+
+evaluateOptions:
+    # One GPU: two models loading at once would only queue inside Ollama and
+    # trip the client's idle watchdog.
+    maxConcurrency: 1
+    # No pause between cases. For a while there was one (30 s), while
+    # continuous inference seemed to freeze the WSL distro; the cause was
+    # llama-server's prompt cache filling the VM's RAM, switched off with
+    # LLAMA_ARG_CACHE_RAM=0 on the Ollama service (the evals notes in
+    # CLAUDE.md tell the story). `--delay <ms>` on the command line brings a
+    # pause back for one run.
+
+# After every run, `record-eval-run-results.ts` folds the run into
+# ../results/<model>.json (one merged file per model) and regenerates
+# ../results/README.md.
+# The suffix is the hook name; Promptfoo also looks the export up by it.
+extensions:
+    - file://record-eval-run-results.ts:afterAll

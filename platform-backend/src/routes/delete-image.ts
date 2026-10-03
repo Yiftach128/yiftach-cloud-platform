@@ -1,6 +1,6 @@
 import { Router } from 'express';
 
-import type { DockerImageService } from '../services/docker/docker-image-service.ts';
+import type { ImageService } from '../services/docker/interfaces.ts';
 
 /**
  * DELETE /images/:id — removes a platform-built image by id (or URL-encoded
@@ -8,7 +8,7 @@ import type { DockerImageService } from '../services/docker/docker-image-service
  * (409 otherwise); an image still used by a container is refused by the daemon
  * (409), and unknown ids answer 404.
  */
-export function deleteImageRoute(images: DockerImageService): Router {
+export function deleteImageRoute(images: ImageService): Router {
     return Router().delete('/images/:id', async (req, res) => {
         await images.deleteManagedImage(req.params.id);
         res.status(204).end();

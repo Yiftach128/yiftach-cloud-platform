@@ -1,7 +1,6 @@
 import { Router } from 'express';
 
-import type { DockerManagerService } from '../services/docker/docker-manager-service.ts';
-import type { ContainerDetails, CreateContainerOptions } from '../services/docker/interfaces.ts';
+import type { ContainerDetails, ContainerService, CreateContainerOptions } from '../services/docker/interfaces.ts';
 import { parseCreateContainerRequest } from '../services/validation/parse-create-container-request.ts';
 
 /**
@@ -10,7 +9,7 @@ import { parseCreateContainerRequest } from '../services/validation/parse-create
  * minutes the first time an image is used. Answers 201 with the new container's
  * details.
  */
-export function postContainerRoute(docker: DockerManagerService): Router {
+export function postContainerRoute(docker: ContainerService): Router {
     return Router().post('/containers', async (req, res) => {
         const options: CreateContainerOptions = parseCreateContainerRequest(req.body);
         const details: ContainerDetails = await docker.createContainer(options);

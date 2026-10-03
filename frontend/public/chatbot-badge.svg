@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Cute gray chatbot with colorful favicon chest badge</title>
+  <desc id="desc">A friendly rounded gray robot waving, with the colorful supplied lightning-shaped favicon displayed on its chest.</desc>
+  <defs>
+    <linearGradient id="body" x1="150" y1="222" x2="376" y2="454" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FAFAFA"/>
+      <stop offset="1" stop-color="#D9DEE4"/>
+    </linearGradient>
+    <linearGradient id="head" x1="142" y1="92" x2="369" y2="281" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FAFAFA"/>
+      <stop offset="1" stop-color="#D5DAE0"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="166" y1="135" x2="343" y2="234" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#30343B"/>
+      <stop offset="1" stop-color="#505761"/>
+    </linearGradient>
+    <linearGradient id="badge" x1="0" y1="0" x2="48" y2="46" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A45DFF"/>
+      <stop offset="0.52" stop-color="#863BFF"/>
+      <stop offset="1" stop-color="#47BFFF"/>
+    </linearGradient>
+    <linearGradient id="antenna" x1="238" y1="65" x2="278" y2="105" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#47BFFF"/>
+      <stop offset="1" stop-color="#863BFF"/>
+    </linearGradient>
+    <filter id="shadow" x="76" y="66" width="370" height="408" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="13" stdDeviation="13" flood-color="#343A42" flood-opacity="0.18"/>
+    </filter>
+    <filter id="badgeGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#7E14FF" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- soft grounding shadow -->
+  <ellipse cx="256" cy="454" rx="121" ry="20" fill="#3F454D" opacity="0.12"/>
+
+  <g filter="url(#shadow)">
+    <!-- ears -->
+    <rect x="105" y="153" width="45" height="77" rx="22.5" fill="#8B929C"/>
+    <rect x="362" y="153" width="45" height="77" rx="22.5" fill="#8B929C"/>
+    <rect x="115" y="165" width="22" height="52" rx="11" fill="#CDD1D6"/>
+    <rect x="375" y="165" width="22" height="52" rx="11" fill="#CDD1D6"/>
+
+    <!-- head -->
+    <rect x="132" y="99" width="248" height="176" rx="70" fill="url(#head)" stroke="#59616C" stroke-width="8"/>
+    <rect x="157" y="127" width="198" height="116" rx="46" fill="url(#screen)"/>
+    <path d="M181 151C199 135 225 134 242 137" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" opacity="0.16"/>
+
+    <!-- face -->
+    <ellipse cx="211" cy="181" rx="14" ry="17" fill="#DCE5EC"/>
+    <ellipse cx="301" cy="181" rx="14" ry="17" fill="#DCE5EC"/>
+    <circle cx="207" cy="176" r="4" fill="#FFFFFF" opacity="0.86"/>
+    <circle cx="297" cy="176" r="4" fill="#FFFFFF" opacity="0.86"/>
+    <path d="M222 207C232 219 245 225 256 225C267 225 280 219 290 207" stroke="#C4CBD2" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="184" cy="207" r="8" fill="#AAB1B9" opacity="0.72"/>
+    <circle cx="328" cy="207" r="8" fill="#AAB1B9" opacity="0.72"/>
+
+    <!-- neck -->
+    <rect x="224" y="264" width="64" height="36" rx="16" fill="#7F8792"/>
+
+    <!-- body -->
+    <rect x="154" y="283" width="204" height="156" rx="67" fill="url(#body)" stroke="#59616C" stroke-width="8"/>
+    <path d="M187 308C210 292 237 290 256 290" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" opacity="0.75"/>
+
+    <!-- left arm and hand -->
+    <path d="M158 326C130 329 116 346 111 374" stroke="#59616C" stroke-width="42" stroke-linecap="round"/>
+    <path d="M158 326C132 329 120 347 116 374" stroke="#CED3D9" stroke-width="28" stroke-linecap="round"/>
+    <circle cx="110" cy="393" r="24" fill="#F3F4F6" stroke="#59616C" stroke-width="7"/>
+
+    <!-- waving right arm -->
+    <path d="M356 328C385 319 398 293 398 263" stroke="#59616C" stroke-width="42" stroke-linecap="round"/>
+    <path d="M356 328C383 318 391 292 391 263" stroke="#CED3D9" stroke-width="28" stroke-linecap="round"/>
+    <path d="M391 263L378 237M394 260L399 229M397 265L418 243" stroke="#59616C" stroke-width="19" stroke-linecap="round"/>
+    <path d="M391 263L378 237M394 260L399 229M397 265L418 243" stroke="#F3F4F6" stroke-width="11" stroke-linecap="round"/>
+    <circle cx="393" cy="267" r="22" fill="#F3F4F6" stroke="#59616C" stroke-width="7"/>
+
+    <!-- feet -->
+    <path d="M206 429V447" stroke="#59616C" stroke-width="25" stroke-linecap="round"/>
+    <path d="M306 429V447" stroke="#59616C" stroke-width="25" stroke-linecap="round"/>
+    <path d="M174 451C174 437 185 426 199 426H214C228 426 239 437 239 451V454H174V451Z" fill="#8B929C" stroke="#59616C" stroke-width="7"/>
+    <path d="M273 451C273 437 284 426 298 426H313C327 426 338 437 338 451V454H273V451Z" fill="#8B929C" stroke="#59616C" stroke-width="7"/>
+
+    <!-- supplied favicon, enlarged as a borderless chest emblem -->
+    <g transform="translate(214 320) scale(1.75)" filter="url(#badgeGlow)">
+      <path fill="url(#badge)" d="M25.946 44.938c-.664.845-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.287c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.497 0-3.578-1.842-3.578H1.237c-.92 0-1.456-1.04-.92-1.788L10.013.474c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.579 1.842 3.579h11.377c.943 0 1.473 1.088.89 1.83L25.947 44.94z"/>
+      <path d="M12 5H34" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" opacity="0.22"/>
+    </g>
+  </g>
+</svg>

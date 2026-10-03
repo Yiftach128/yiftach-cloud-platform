@@ -432,3 +432,148 @@ export interface BuildAgent {
     /** Job the agent is building; present only while status is 'building'. */
     currentJobId?: string;
 }
+
+/** Who wrote one chat turn. */
+export type ChatRole = 'user' | 'assistant';
+
+/** One turn of the conversation, as the chat backend receives it. */
+export interface ChatTurn {
+    role: ChatRole;
+    text: string;
+}
+
+/** What one reply is asked for: the conversation so far, and the composer's auto-approve switch. */
+export interface ChatReplyRequest {
+    turns: ChatTurn[];
+    /**
+     * True runs the assistant's destructive tool calls (stop, restart, delete)
+     * without Approve/Deny. Sent with every message — the backend keeps no
+     * mode, the switch is the tab's.
+     */
+    autoApproveToolCalls: boolean;
+}
+
+/** One event of a Server-Sent Events stream, as read off the wire: its name and its undecoded data. */
+export interface ServerSentEvent {
+    /** The `event:` field; "message" when the stream gave none (the SSE default). */
+    event: string;
+    /** The `data:` field — several data lines joined by newlines. */
+    data: string;
+}
+
+/*
+ * The events of a streamed chat reply (POST /chat) — mirrors
+ * platform-backend/src/server-sent-events/interfaces.ts and the AgentEvent
+ * types of platform-backend/src/services/ai-agent/interfaces.ts. `delta`,
+ * `tool_call`, `tool_approval` and `tool_result` arrive while the agent
+ * works; exactly one `done` or `error` ends the stream. Each event's data
+ * carries its `type`, which is also the SSE event name. A `tool_call` that
+ * needs approval holds the reply until the person answers through
+ * `ChatFetcher.answerToolCall` (POST /chat/approvals) or stops it.
+ */
+
+/** A fragment of the reply's text, as the model generates it. */
+export interface ChatDeltaStreamEvent {
+    type: 'delta';
+    text: string;
+}
+
+/** The person's answer to a tool call that waits for approval. */
+export type ChatToolCallDecision = 'approved' | 'denied';
+
+/** The model asked for a tool; the call is about to run — or, when it needs approval, about to wait for it. */
+export interface ChatToolCallStreamEvent {
+    type: 'tool_call';
+    /** Numbers the reply's tool calls from 1 in the order the model asked; the call's later events carry the same id. */
+    callId: number;
+    name: string;
+    arguments: Record<string, unknown>;
+    /** True when the call waits for the person's approval; a `tool_approval` then says what was decided. False under auto-approve. */
+    needsApproval: boolean;
+    /** True when the tool may interrupt or destroy something (stop, restart, delete): the calls that wait for approval. */
+    destructive: boolean;
+}
+
+/** The person decided about a call that needed approval. A denied call still gets a `tool_result` (an error). */
+export interface ChatToolApprovalStreamEvent {
+    type: 'tool_approval';
+    callId: number;
+    name: string;
+    decision: ChatToolCallDecision;
+}
+
+/**
+ * A tool call finished; `text` is the result exactly as the model reads it.
+ * `callId` names the call it answers — the results of a concurrent batch
+ * arrive in the order they finished, not the order asked.
+ */
+export interface ChatToolResultStreamEvent {
+    type: 'tool_result';
+    callId: number;
+    name: string;
+    isError: boolean;
+    text: string;
+}
+
+/** Why a run ended: the model answered, it hit its model-call cap, or the run was aborted. */
+export type ChatStopReason = 'answered' | 'model_call_limit' | 'aborted';
+
+/** The run ended normally; the text already streamed is the reply. */
+export interface ChatDoneStreamEvent {
+    type: 'done';
+    stopReason: ChatStopReason;
+    modelCalls: number;
+    /** The largest prompt of the run, in tokens — how close it came to the model's context window. */
+    peakPromptTokens: number;
+}
+
+export type ChatStreamErrorCode = 'llm_unavailable' | 'llm_request_failed' | 'internal';
+
+/** The run failed after the stream had opened; `message` is written for the person chatting. */
+export interface ChatErrorStreamEvent {
+    type: 'error';
+    code: ChatStreamErrorCode;
+    message: string;
+}
+
+export type ChatStreamEvent =
+    | ChatDeltaStreamEvent
+    | ChatToolCallStreamEvent
+    | ChatToolApprovalStreamEvent
+    | ChatToolResultStreamEvent
+    | ChatDoneStreamEvent
+    | ChatErrorStreamEvent;
+
+/** What a `ChatFetcher` hands the UI while a reply streams: every event of the stream but `error`, which becomes the rejection. */
+export type ChatReplyEvent =
+    | ChatDeltaStreamEvent
+    | ChatToolCallStreamEvent
+    | ChatToolApprovalStreamEvent
+    | ChatToolResultStreamEvent
+    | ChatDoneStreamEvent;
+
+/**
+ * The seam between the chat UI and whatever answers it — ChatFetcherService,
+ * which streams from the platform backend. Never from an LLM provider
+ * directly: the browser does not know which model answers, or where it runs.
+ */
+export interface ChatFetcher {
+    /**
+     * Sends the conversation so far (and the auto-approve choice) and streams
+     * the assistant's reply:
+     * `onEvent` receives each event in order — text fragments, tool calls,
+     * approvals and results, then the `done` that closes the reply — and the
+     * promise resolves once the reply is complete. Aborting `signal` ends the
+     * stream early, without a `done`, and the promise still resolves — callers
+     * tell the two apart by `signal.aborted`. Rejects only with ChatFetcherError.
+     */
+    streamReply(request: ChatReplyRequest, onEvent: (event: ChatReplyEvent) => void, signal: AbortSignal): Promise<void>;
+    /**
+     * Answers the tool call the streaming reply waits on. The decision comes
+     * back on the reply's stream as its `tool_approval` event; this promise
+     * only says the backend took the answer. Rejects with ChatFetcherError
+     * when it did not — no such call waiting (the reply was stopped, or the
+     * call already answered), or the backend unreachable.
+     */
+    answerToolCall(callId: number, decision: ChatToolCallDecision): Promise<void>;
+}

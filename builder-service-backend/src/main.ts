@@ -9,18 +9,19 @@
 import { mkdir } from 'node:fs/promises';
 
 import { config } from './config/config.ts';
-import { ImageBuilderService } from './services/docker/image-builder-service.ts';
-import { GitCloneService } from './services/git/git-clone-service.ts';
-import { PlatformApiClient } from './services/platform/platform-api-client.ts';
+import { DockerImageBuilderService } from './services/docker/docker-image-builder-service.ts';
+import { GitRepositoryCloneService } from './services/git/git-repository-clone-service.ts';
+import { HttpPlatformApiClient } from './services/platform/http-platform-api-client.ts';
 import { BuildWorker } from './services/worker/build-worker.ts';
 import { HeartbeatReporter } from './services/worker/heartbeat-reporter.ts';
 import { PortResolver } from './services/worker/port-resolver.ts';
 
 await mkdir(config.WORKSPACE_DIR, { recursive: true });
 
-const platform = new PlatformApiClient(config.PLATFORM_API_URL);
-const git = new GitCloneService();
-const images = new ImageBuilderService({
+const platform = new HttpPlatformApiClient(config.PLATFORM_API_URL);
+const git = new GitRepositoryCloneService();
+const images = new DockerImageBuilderService({
+    socketPath: config.DOCKER_SOCKET_PATH,
     host: config.DOCKER_HOST_NAME,
     port: config.DOCKER_HOST_PORT,
 });

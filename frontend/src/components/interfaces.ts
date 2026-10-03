@@ -1,10 +1,164 @@
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode, Ref } from 'react';
 
 import type { DockerFetcherService } from '../fetchers/docker-fetcher-service.ts';
-import type { BuildJob, ContainerState, ImagePreset, PresetEnvVar } from '../fetchers/interfaces.ts';
+import type {
+    BuildJob,
+    ChatFetcher,
+    ChatRole,
+    ChatToolCallDecision,
+    ContainerState,
+    ImagePreset,
+    PresetEnvVar,
+} from '../fetchers/interfaces.ts';
+
+export interface AppLayoutProps {
+    /** Feeds the chat column, which lives in the layout so a conversation survives route changes. */
+    chatFetcher: ChatFetcher;
+}
 
 export interface BuildAgentListProps {
     fetcher: DockerFetcherService;
+}
+
+export interface ChatColumnResizeHandleProps {
+    /** The column's current width; a drag is measured from it. */
+    width: number;
+    minWidth: number;
+    maxWidth: number;
+    /** Fires on every pointer move and key press with the clamped new width. */
+    onResize: (width: number) => void;
+    /** Fires when a drag ends or a key press is applied — the moment to remember the width. */
+    onResizeEnd: (width: number) => void;
+    /** Double-click: back to the default width. */
+    onReset: () => void;
+}
+
+export interface ChatDockedColumnProps {
+    fetcher: ChatFetcher;
+    /** Whether the column is open; closed is collapsed to zero width, never unmounted. */
+    open: boolean;
+    /** The column's X. */
+    onClose: () => void;
+}
+
+export interface ChatMascotButtonProps {
+    /** Toggles the docked chat column. */
+    onClick: () => void;
+}
+
+/**
+ * Where one chat message stands. 'streaming' is an assistant reply still
+ * arriving; 'stopped' one the user cut short; 'error' one the fetcher failed.
+ * User messages are always 'done'.
+ */
+export type ChatMessageStatus = 'streaming' | 'done' | 'stopped' | 'error';
+
+/**
+ * How far one tool call of a reply has got: 'awaiting' while it waits for the
+ * person's approval, 'running' until its result arrives, then 'done' or
+ * 'error' by what the tool returned; 'denied' when the person refused it (it
+ * never ran); 'stopped' when the reply ended (Stop, or a failure) before the
+ * result — or the decision — came.
+ */
+export type ChatToolCallStatus = 'awaiting' | 'running' | 'done' | 'error' | 'denied' | 'stopped';
+
+/** What the tags and the details block report when the person decides about a call. */
+export type ChatToolCallDecisionHandler = (callId: number, decision: ChatToolCallDecision) => void;
+
+/** One tool call the assistant made while answering, as its tag shows it. */
+export interface ChatToolCall {
+    /** The backend's numbering within the reply; pairs a result with its call. */
+    callId: number;
+    name: string;
+    arguments: Record<string, unknown>;
+    /** True when the tool may interrupt or destroy something: the calls that wait for approval. */
+    destructive: boolean;
+    status: ChatToolCallStatus;
+    /** The result exactly as the model read it; present once status is 'done', 'error' or 'denied'. */
+    resultText?: string;
+}
+
+/** One rendered chat message. */
+export interface ChatMessage {
+    /** Conversation-local sequence number; the React key. */
+    id: number;
+    role: ChatRole;
+    /** Grows fragment by fragment while status is 'streaming'. */
+    text: string;
+    status: ChatMessageStatus;
+    /** The failure text; present only when status is 'error'. */
+    errorMessage?: string;
+    /** The tool calls made for an assistant reply, in the order the model asked for them; empty for a user message. */
+    toolCalls: ChatToolCall[];
+    /** True when the agent's model-call cap forced the reply, which may then be incomplete. */
+    hitModelCallLimit: boolean;
+}
+
+/** What the panel's host may ask of the conversation, through the panel's `ref`. */
+export interface ChatPanelHandle {
+    /** Empties the conversation, stopping a reply still streaming; the tab's stored copy goes with it. */
+    deleteConversation: () => void;
+}
+
+export interface ChatPanelProps {
+    fetcher: ChatFetcher;
+    /** Whether the chat column is open — the composer takes focus when it opens. */
+    open: boolean;
+    /** Receives the `ChatPanelHandle`; the column's "New conversation" goes through it. */
+    ref?: Ref<ChatPanelHandle>;
+}
+
+export interface ChatMessageListProps {
+    messages: ChatMessage[];
+    /** Passed down to the tool-call approval row, where Approve and Deny live. */
+    onDecide: ChatToolCallDecisionHandler;
+}
+
+export interface ChatMessageItemProps {
+    message: ChatMessage;
+    onDecide: ChatToolCallDecisionHandler;
+}
+
+export interface ChatToolCallTagsProps {
+    /** The reply's tool calls, in call order. */
+    toolCalls: ChatToolCall[];
+    onDecide: ChatToolCallDecisionHandler;
+}
+
+/** The ask under the tag row: shown by the tags while one call waits, keyed by that call. */
+export interface ChatToolCallApprovalRowProps {
+    /** The one call waiting for the person's answer. */
+    toolCall: ChatToolCall;
+    /** Fires once, when Approve or Deny is clicked. */
+    onDecide: ChatToolCallDecisionHandler;
+}
+
+export interface ChatToolCallDetailsProps {
+    toolCall: ChatToolCall;
+}
+
+export interface ChatReplyMarkdownProps {
+    /** The assistant reply as the model wrote it — markdown, possibly still streaming in. */
+    text: string;
+}
+
+/** What the markdown renderer hands the component standing in for an `<a>`. */
+export interface ChatReplyMarkdownLinkProps {
+    href?: string;
+    children?: ReactNode;
+}
+
+export interface ChatComposerProps {
+    /** Whether the chat column is open — the text field takes focus when it opens. */
+    open: boolean;
+    /** True while a reply streams: sending is blocked and the button turns into Stop. */
+    replying: boolean;
+    /** Receives the trimmed, non-empty draft. */
+    onSend: (text: string) => void;
+    onStop: () => void;
+    /** The auto-approve switch: on, every message is sent with `autoApproveToolCalls`, so stop, restart and delete run without asking. */
+    autoApproveToolCalls: boolean;
+    onAutoApproveToolCallsChange: (autoApprove: boolean) => void;
 }
 
 export interface ContainerListProps {
@@ -30,7 +184,7 @@ export interface ContainerDetailsProps {
 }
 
 /** Actions the container toolbar can run; keys the per-button loading state. */
-export type ContainerAction = 'start' | 'stop' | 'restart' | 'clear-logs' | 'delete';
+export type ContainerAction = 'start' | 'stop' | 'restart' | 'delete';
 
 export interface ContainerControlsProps {
     fetcher: DockerFetcherService;

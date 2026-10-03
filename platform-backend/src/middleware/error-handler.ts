@@ -1,12 +1,13 @@
 import type { ErrorRequestHandler } from 'express';
 
+import { AiAgentBusyError } from '../services/ai-agent/ai-agent-busy-error.ts';
+import { ToolCallApprovalNotPendingError } from '../services/ai-agent/tool-call-approval-not-pending-error.ts';
 import { BuildJobNotFoundError } from '../services/builds/build-job-not-found-error.ts';
 import { BuildQueueFullError } from '../services/builds/build-queue-full-error.ts';
 import { DockerApiError } from '../services/docker/docker-api-error.ts';
 import { DockerConnectionError } from '../services/docker/docker-connection-error.ts';
 import { ImageNotManagedError } from '../services/docker/image-not-managed-error.ts';
 import { ImagePullError } from '../services/docker/image-pull-error.ts';
-import { LogsNotClearableError } from '../services/docker/logs-not-clearable-error.ts';
 import { ValidationError } from '../services/validation/validation-error.ts';
 
 /**
@@ -31,11 +32,19 @@ export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
         res.status(429).json({ message: error.message });
         return;
     }
+    if (error instanceof AiAgentBusyError) {
+        res.status(429).json({ message: error.message });
+        return;
+    }
     if (error instanceof BuildJobNotFoundError) {
         res.status(404).json({ message: error.message });
         return;
     }
     if (error instanceof ImageNotManagedError) {
+        res.status(409).json({ message: error.message });
+        return;
+    }
+    if (error instanceof ToolCallApprovalNotPendingError) {
         res.status(409).json({ message: error.message });
         return;
     }
@@ -45,10 +54,6 @@ export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
     }
     if (error instanceof DockerConnectionError) {
         res.status(503).json({ message: error.message });
-        return;
-    }
-    if (error instanceof LogsNotClearableError) {
-        res.status(409).json({ message: error.message });
         return;
     }
     let message: string;

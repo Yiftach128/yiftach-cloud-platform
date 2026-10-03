@@ -1,10 +1,15 @@
 /**
  * Classifies dockerode failures: did the daemon answer and reject the request
- * (engine error), or was it never reached at all (connection error)? The manager
- * uses this to decide between mapping to an API error and booting WSL for a retry.
+ * (engine error), or was it never reached at all (connection error)? The request
+ * runner uses this to decide between mapping to an API error and booting WSL for a
+ * retry.
  */
 
-/** Node system error codes that mean "never reached the daemon". */
+/**
+ * Node system error codes that mean "never reached the daemon". ENOENT and EACCES
+ * are the unix socket flavours: the socket file is missing (not mounted) or this
+ * process may not open it.
+ */
 const CONNECTION_ERROR_CODES = new Set([
     'ECONNREFUSED',
     'ECONNRESET',
@@ -14,6 +19,8 @@ const CONNECTION_ERROR_CODES = new Set([
     'ETIMEDOUT',
     'EPIPE',
     'ECONNABORTED',
+    'ENOENT',
+    'EACCES',
 ]);
 
 /**

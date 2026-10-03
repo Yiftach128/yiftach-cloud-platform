@@ -8,7 +8,7 @@
  */
 
 import { BuildJobLostError } from '../platform/build-job-lost-error.ts';
-import { PlatformApiClient } from '../platform/platform-api-client.ts';
+import type { PlatformApiClient } from '../platform/interfaces.ts';
 
 const FLUSH_INTERVAL_MS = 1000;
 /** Stay under the platform's 1000-lines-per-request validation cap. */

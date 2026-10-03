@@ -292,7 +292,7 @@ function ContainerDetails(props: ContainerDetailsProps): ReactElement {
        reset drops the old container's data so the new one starts from a
        skeleton. Same-name re-fetches (toolbar actions via reload) are silent —
        the toolbar and the logs panel stay mounted, so the tail session
-       survives Start/Stop/Restart/Clear-Logs. */
+       survives Start/Stop/Restart. */
     const fetched: FetchedData<ContainerDetailsData> = useFetchedData<ContainerDetailsData>({
         fetch: () => props.fetcher.getContainer(props.containerName),
         describeError: describeLoadError,

@@ -11,17 +11,30 @@
     "dev": "nodemon",
     "build": "tsc",
     "serve": "node dist/server.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p evals && tsc --noEmit -p test",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "ask:ai-agent": "node evals/ask-ai-agent.ts",
+    "replay:model-call": "node evals/replay-recorded-model-call.ts",
+    "eval": "promptfoo eval -c evals/promptfoo/promptfoo-config.yaml",
+    "eval:view": "promptfoo view",
+    "eval:table": "node evals/regenerate-eval-results-table.ts",
+    "eval:rescore": "node evals/rescore-recorded-eval-results.ts"
   },
   "devDependencies": {
     "@types/dockerode": "^4.0.1",
     "@types/express": "^5.0.6",
     "@types/node": "^24.10.1",
     "nodemon": "^3.1.14",
-    "typescript": "^5.9.3"
+    "promptfoo": "^0.123.1",
+    "typescript": "^5.9.3",
+    "yaml": "^2.9.1"
   },
   "dependencies": {
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/node": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
     "dockerode": "^5.0.1",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "zod": "^4.6.5"
   }
 }

@@ -131,6 +131,29 @@ function renderMemory(container: Container, stats: ContainerStatsMap): ReactElem
     return <Tooltip title={`${used} of ${limit}`}>{used}</Tooltip>;
 }
 
+/* The least a width-less column (Name, Image) may be squeezed to before the
+   table scrolls sideways instead — see computeMinimumTableWidth. */
+const MIN_FLEX_COLUMN_WIDTH_PX: number = 100;
+
+/* The bounded widths plus the minimum for each width-less column: what the
+   table is set to scroll under. Under the fixed layout the width-less columns
+   get only what the bounded ones leave, and with the chat column open beside
+   the page that can be nothing at all — Name, the row's primary cell, gone
+   without a trace. Below this width the table scrolls sideways with every
+   column readable instead. Derived from the columns, so a width change never
+   needs a matching edit here. */
+function computeMinimumTableWidth(columns: NonNullable<TableProps<Container>['columns']>): number {
+    let total: number = 0;
+    for (const column of columns) {
+        if (typeof column.width === 'number') {
+            total = total + column.width;
+        } else {
+            total = total + MIN_FLEX_COLUMN_WIDTH_PX;
+        }
+    }
+    return total;
+}
+
 /* Width-less columns (Name, Image) share the table's remaining space under
    the fixed layout; the bounded columns hold their pixel widths. All data
    cells render through renderRowLinkCell, so the columns live here rather
@@ -293,6 +316,7 @@ function ContainerList(props: ContainerListProps): ReactElement {
     }
 
     const columns: NonNullable<TableProps<Container>['columns']> = buildColumns(props.fetcher, navigate, fetched.reload, stats);
+    const minimumTableWidth: number = computeMinimumTableWidth(columns);
 
     let visibleContainers: Container[];
     if (showAll) {
@@ -328,6 +352,7 @@ function ContainerList(props: ContainerListProps): ReactElement {
             <Table<Container>
                 className="app-hover-actions-table"
                 tableLayout="fixed"
+                scroll={{ x: minimumTableWidth }}
                 columns={columns}
                 dataSource={visibleContainers}
                 rowKey="id"

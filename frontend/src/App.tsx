@@ -2,7 +2,9 @@ import type { ReactElement } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 
 import AppLayout from './components/app-layout.tsx';
+import { ChatFetcherService } from './fetchers/chat-fetcher-service.ts';
 import { DockerFetcherService } from './fetchers/docker-fetcher-service.ts';
+import type { ChatFetcher } from './fetchers/interfaces.ts';
 import BuildAgentsPage from './pages/build-agents-page.tsx';
 import ContainerDetailsPage from './pages/container-details-page.tsx';
 import ImageDetailsPage from './pages/image-details-page.tsx';
@@ -12,12 +14,13 @@ import OverviewPage from './pages/overview-page.tsx';
 import ServicesPage from './pages/services-page.tsx';
 
 const dockerFetcher: DockerFetcherService = new DockerFetcherService('/api/v1');
+const chatFetcher: ChatFetcher = new ChatFetcherService('/api/v1');
 
 function App(): ReactElement {
     return (
         <BrowserRouter>
             <Routes>
-                <Route element={<AppLayout />}>
+                <Route element={<AppLayout chatFetcher={chatFetcher} />}>
                     <Route index element={<Navigate to="/services" replace />} />
                     <Route path="/services" element={<ServicesPage fetcher={dockerFetcher} />} />
                     <Route path="/services/:containerName" element={<ContainerDetailsPage fetcher={dockerFetcher} />} />

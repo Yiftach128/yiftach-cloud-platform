@@ -1,0 +1,10 @@
+{
+    // Typechecks the unit tests (and whatever they import from ../src) with the
+    // builder's compiler options. A separate project: the main tsconfig.json
+    // builds `src/` alone, so nothing here is ever emitted or shipped.
+    "extends": "../tsconfig.json",
+    "compilerOptions": {
+        "noEmit": true
+    },
+    "include": ["./**/*.ts"]
+}

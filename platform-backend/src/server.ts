@@ -6,8 +6,13 @@
 import express from 'express';
 
 import { config } from './config/config.ts';
+import { connectInProcessMcpToolProvider } from './mcp/client/connect-in-process-mcp-tool-provider.ts';
+import type { PlatformMcpServices } from './mcp/server/interfaces.ts';
+import { McpHttpEndpoint } from './mcp/server/mcp-http-endpoint.ts';
 import { errorHandler } from './middleware/error-handler.ts';
-import { deleteContainerLogsRoute } from './routes/delete-container-logs.ts';
+import { hostCheck } from './middleware/host-check.ts';
+import { staticFrontend } from './middleware/static-frontend.ts';
+import { allMcpRoute } from './routes/all-mcp.ts';
 import { deleteContainerRoute } from './routes/delete-container.ts';
 import { deleteImageRoute } from './routes/delete-image.ts';
 import { getBuildAgentsRoute } from './routes/get-build-agents.ts';
@@ -26,32 +31,51 @@ import { postBuildRoute } from './routes/post-build.ts';
 import { postBuildsQueueClaimRoute } from './routes/post-builds-queue-claim.ts';
 import { postBuildsQueueLogsRoute } from './routes/post-builds-queue-logs.ts';
 import { postBuildsQueueResultRoute } from './routes/post-builds-queue-result.ts';
+import { postChatApprovalRoute } from './routes/post-chat-approval.ts';
+import { postChatRoute } from './routes/post-chat.ts';
 import { postContainerRestartRoute } from './routes/post-container-restart.ts';
 import { postContainerStartRoute } from './routes/post-container-start.ts';
 import { postContainerStopRoute } from './routes/post-container-stop.ts';
 import { postContainerRoute } from './routes/post-container.ts';
+import { AiAgentChatService } from './services/ai-agent/ai-agent-chat-service.ts';
+import { ToolCallApprovalGate } from './services/ai-agent/tool-call-approval-gate.ts';
+import { ToolCallingChatOrchestrator } from './services/ai-agent/tool-calling-chat-orchestrator.ts';
+import { createChatTracerForDirectory } from './services/chat-traces/create-chat-tracer-for-directory.ts';
 import { BuildAgentRegistry } from './services/build-agents/build-agent-registry.ts';
 import { BuildJobRegistry } from './services/builds/build-job-registry.ts';
 import { BuildQueueService } from './services/builds/build-queue-service.ts';
+import { DockerContainerService } from './services/docker/docker-container-service.ts';
 import { DockerImageService } from './services/docker/docker-image-service.ts';
-import { DockerManagerService } from './services/docker/docker-manager-service.ts';
+import { ExternalDockerDaemon } from './services/docker/external-docker-daemon.ts';
 import { resolveDockerEndpoint } from './services/docker/resolve-docker-endpoint.ts';
 import { ImagePresetService } from './services/images/image-preset-service.ts';
+import { OllamaLlmClient } from './services/llm/ollama/ollama-llm-client.ts';
 import { bootstrapWslDocker } from './services/wsl/bootstrap-wsl-docker.ts';
-import { WslDockerHostFiles } from './services/wsl/wsl-docker-host-files.ts';
+import type { WslDockerDaemon } from './services/wsl/wsl-docker-daemon.ts';
 
 const endpoint = resolveDockerEndpoint({ dockerHost: config.DOCKER_HOST });
 const wslKeepalive: boolean = config.DOCKER_WSL_KEEPALIVE !== '0';
-const daemon = bootstrapWslDocker(endpoint.baseUrl, wslKeepalive);
+
+// A unix:// endpoint means this process runs next to a daemon somebody else keeps
+// up (a container with the socket mounted): no WSL distro to boot. A tcp://
+// endpoint is the WSL deployment.
+let daemon: WslDockerDaemon | ExternalDockerDaemon;
+if (endpoint.socketPath !== undefined) {
+    daemon = new ExternalDockerDaemon();
+} else {
+    daemon = bootstrapWslDocker(endpoint.baseUrl, wslKeepalive);
+}
+
 const dockerImages = new DockerImageService({
     daemon: daemon,
+    socketPath: endpoint.socketPath,
     host: endpoint.host,
     port: endpoint.port,
 });
-const docker = new DockerManagerService({
+const docker = new DockerContainerService({
     daemon: daemon,
-    hostFiles: new WslDockerHostFiles(),
     images: dockerImages,
+    socketPath: endpoint.socketPath,
     host: endpoint.host,
     port: endpoint.port,
 });
@@ -59,16 +83,52 @@ const imagePresets = new ImagePresetService();
 const buildRegistry = new BuildJobRegistry();
 const imageBuilds = new BuildQueueService(buildRegistry, daemon, config.BUILD_STALE_TIMEOUT_MS);
 const buildAgents = new BuildAgentRegistry();
+const mcpServices: PlatformMcpServices = {
+    docker: docker,
+    images: dockerImages,
+    builds: imageBuilds,
+    buildAgents: buildAgents,
+};
+const mcp = new McpHttpEndpoint(mcpServices);
+
+// The assistant reaches the platform's tools through MCP like any other client —
+// over the in-process transport, because it lives in this process: the same
+// server factory as /mcp, so the same catalog, validation and error mapping.
+// A tool call that changes something waits at the approval gate for the
+// person's answer, which POST /chat/approvals hands in through the chat service.
+// Every run is traced to CHAT_TRACE_DIR — the exact prompts the model read and
+// what it answered — so a reply that went wrong can be replayed afterwards.
+const llm = new OllamaLlmClient({
+    baseUrl: config.OLLAMA_URL,
+    model: config.OLLAMA_MODEL,
+    contextTokens: config.OLLAMA_NUM_CTX,
+});
+const aiAgentTools = await connectInProcessMcpToolProvider(mcpServices);
+const aiAgentApprovalGate = new ToolCallApprovalGate();
+const aiAgentChat = new AiAgentChatService(
+    new ToolCallingChatOrchestrator({
+        llm: llm,
+        tools: aiAgentTools,
+        approver: aiAgentApprovalGate,
+        tracer: createChatTracerForDirectory({
+            directory: config.CHAT_TRACE_DIR,
+            model: config.OLLAMA_MODEL,
+            contextTokens: config.OLLAMA_NUM_CTX,
+        }),
+    }),
+    aiAgentApprovalGate,
+);
 
 const app = express();
+app.use(hostCheck(config.ALLOWED_HOSTS)); // first: nothing answers a request from a foreign host or origin
 app.use(express.json());
 app.use(getHealthRoute(docker)); // liveness probe stays unversioned
+app.use(allMcpRoute(mcp)); // unversioned too: MCP negotiates its own protocol revision
 app.use('/api/v1', getContainersRoute(docker));
 app.use('/api/v1', getContainersStatsRoute(docker)); // before :id — /containers/stats must not match :id
 app.use('/api/v1', getContainerRoute(docker));
 app.use('/api/v1', postContainerRoute(docker));
 app.use('/api/v1', deleteContainerRoute(docker));
-app.use('/api/v1', deleteContainerLogsRoute(docker));
 app.use('/api/v1', getContainerLogsRoute(docker));
 app.use('/api/v1', postContainerStartRoute(docker));
 app.use('/api/v1', postContainerStopRoute(docker));
@@ -85,9 +145,21 @@ app.use('/api/v1', postBuildsQueueLogsRoute(imageBuilds));
 app.use('/api/v1', postBuildsQueueResultRoute(imageBuilds));
 app.use('/api/v1', getBuildAgentsRoute(buildAgents));
 app.use('/api/v1', postBuildAgentsHeartbeatRoute(buildAgents));
+app.use('/api/v1', postChatRoute(aiAgentChat));
+app.use('/api/v1', postChatApprovalRoute(aiAgentChat));
+app.use(staticFrontend(config.STATIC_DIR)); // the built UI, after the API; serves nothing when STATIC_DIR is empty
 app.use(errorHandler);
 
-const server = app.listen(config.PORT, config.HOST, () => {
+// Express 5 hands a failed bind (the port is taken) to this same callback instead
+// of throwing. Unchecked, the "listening" line is printed for a server that never
+// bound and the process ends quietly — leaving whatever else holds the port to
+// answer the frontend's requests.
+const server = app.listen(config.PORT, config.HOST, (error?: Error) => {
+    if (error !== undefined) {
+        console.error(`platform-backend could not listen on http://${config.HOST}:${config.PORT}: ${error.message}`);
+        daemon.stop(); // the WSL keepalive is a child process — it would outlive the exit
+        process.exit(1);
+    }
     console.log(`platform-backend listening on http://${config.HOST}:${config.PORT} -> docker at ${docker.baseUrl}`);
 });
 imageBuilds.start();
@@ -101,6 +173,8 @@ for (const signal of shutdownSignals) {
     process.on(signal, () => {
         console.log(`${signal} received, shutting down...`);
         imageBuilds.stop();
+        void mcp.close(); // ends open MCP streams, which would otherwise hold server.close() up
+        void aiAgentTools.close();
         daemon.stop();
         server.close(() => process.exit(0));
         // Fallback if connections linger past close.

@@ -14,11 +14,10 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-import { ImageBuilderService } from '../docker/image-builder-service.ts';
-import { GitCloneService } from '../git/git-clone-service.ts';
+import type { ImageBuilderService } from '../docker/interfaces.ts';
+import type { RepositoryCloneService } from '../git/interfaces.ts';
 import { BuildJobLostError } from '../platform/build-job-lost-error.ts';
-import type { BuildTask, PortMapping } from '../platform/interfaces.ts';
-import { PlatformApiClient } from '../platform/platform-api-client.ts';
+import type { BuildTask, PlatformApiClient, PortMapping } from '../platform/interfaces.ts';
 import { HeartbeatReporter } from './heartbeat-reporter.ts';
 import type { BuildWorkerOptions } from './interfaces.ts';
 import { LogBatcher } from './log-batcher.ts';
@@ -37,7 +36,7 @@ const BUILD_JOB_ID_LABEL = 'cloudplatform.build-job-id';
 
 export class BuildWorker {
     private readonly platform: PlatformApiClient;
-    private readonly git: GitCloneService;
+    private readonly git: RepositoryCloneService;
     private readonly images: ImageBuilderService;
     private readonly portResolver: PortResolver;
     private readonly heartbeats: HeartbeatReporter;
@@ -46,7 +45,7 @@ export class BuildWorker {
 
     constructor(
         platform: PlatformApiClient,
-        git: GitCloneService,
+        git: RepositoryCloneService,
         images: ImageBuilderService,
         portResolver: PortResolver,
         heartbeats: HeartbeatReporter,
