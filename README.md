@@ -35,7 +35,7 @@ The project is split into three standalone packages: a platform backend (with RE
 - **MCP server** — the platform's operations (such as: start/stop, inspect, stats, build) are also exposed as MCP tools at `/mcp`, so any MCP client can operate the platform, not only the built-in assistant.
 
 
-## <img src="public/assistant-mascot.svg" width="44" alt="YCP Assistant"> The AI assistant
+## <img src="public/assistant-mascot.svg" width="30" alt="YCP Assistant"> The AI assistant
 
 ![The assistant chat](public/gif/assistant-chat.gif)
 
