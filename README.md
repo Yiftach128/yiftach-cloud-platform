@@ -1,6 +1,6 @@
 # YCP - Yiftach Cloud Platform
 
-[![Typecheck, test and build](https://github.com/Yiftach128/yiftach-cloud-platfrom/actions/workflows/typecheck-test-and-build.yml/badge.svg)](https://github.com/Yiftach128/yiftach-cloud-platfrom/actions/workflows/typecheck-test-and-build.yml)
+[![CI](https://github.com/Yiftach128/yiftach-cloud-platform/actions/workflows/typecheck-test-and-build.yml/badge.svg)](https://github.com/Yiftach128/yiftach-cloud-platform/actions/workflows/typecheck-test-and-build.yml)
 
 YCP is a self-hosted cloud control panel for deploying and managing Docker containers from a simple web UI, with Docker daemon as the only source of truth. YCP has live overview of your containers, a variety of managed services you can order, and safe build agents for GitHub repos - so untrusted code can never cause your cloud to crash. 
 
@@ -165,8 +165,8 @@ Good to know:
 ### Install
 
 ```bash
-git clone https://github.com/Yiftach128/yiftach-cloud-platfrom.git
-cd yiftach-cloud-platfrom
+git clone https://github.com/Yiftach128/yiftach-cloud-platform.git
+cd yiftach-cloud-platform
 
 cd platform-backend && npm install && cd ..
 cd builder-service-backend && npm install && cd ..

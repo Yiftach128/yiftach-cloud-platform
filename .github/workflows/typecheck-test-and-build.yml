@@ -10,7 +10,7 @@
 # the unit tests fake all three. The assistant's evals are not run here: they
 # need a model server and a GPU.
 
-name: Typecheck, test and build
+name: CI
 
 on:
     push:
